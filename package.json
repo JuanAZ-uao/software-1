@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "expres": "^0.0.5"
+    "expres": "^0.0.5",
+    "node": "^24.8.0"
   }
 }
