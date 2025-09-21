@@ -2,5 +2,24 @@
   "dependencies": {
     "expres": "^0.0.5",
     "node": "^24.8.0"
-  }
+  },
+  "name": "software-1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JuanAZ-uao/software-1.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JuanAZ-uao/software-1/issues"
+  },
+  "homepage": "https://github.com/JuanAZ-uao/software-1#readme"
 }
