@@ -21,8 +21,8 @@ export const createApp = () => {
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  app.get('/*', (req, res) => {
+    res.status(404).send('404 Not Found');
   });
 
   app.use(errorHandler);
