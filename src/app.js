@@ -25,6 +25,10 @@ export const createApp = () => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
   });
 
+  app.use((req, res) => {
+    res.status(404).send('404 Not Found');
+  });
+
   app.use(errorHandler);
 
   return app;
