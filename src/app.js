@@ -21,7 +21,14 @@ export const createApp = () => {
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  app.get('*', (req, res) => {
+  // Tus rutas normales aquí
+  // app.get('/ruta', ...);
+
+  /**
+   * Ruta catch-all para manejar 404
+   * Esto debe ir al final, después de todas tus rutas
+   */
+  app.use((req, res) => {
     res.status(404).send('404 Not Found');
   });
 
