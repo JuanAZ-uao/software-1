@@ -21,12 +21,13 @@ export const createApp = () => {
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-  });
-
-  app.use((req, res) => {
-    res.status(404).send('404 Not Found');
+  // Catch-all para rutas no encontradas (404)
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+    } else {
+      res.status(404).send('404 Not Found');
+    }
   });
 
   app.use(errorHandler);
