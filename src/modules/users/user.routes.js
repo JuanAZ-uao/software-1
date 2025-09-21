@@ -1,0 +1,20 @@
+import { Router } from 'express';
+import { asyncHandler } from '../../core/middlewares/async-handler.js';
+import {
+  createUser,
+  deleteUser,
+  getUser,
+  listUsers,
+  updateUser
+} from './user.controller.js';
+import { validateCreateUser, validateUpdateUser } from './user.validation.js';
+
+const router = Router();
+
+router.get('/', asyncHandler(listUsers));
+router.get('/:id', asyncHandler(getUser));
+router.post('/', validateCreateUser, asyncHandler(createUser));
+router.put('/:id', validateUpdateUser, asyncHandler(updateUser));
+router.delete('/:id', asyncHandler(deleteUser));
+
+export const usersRouter = router;
