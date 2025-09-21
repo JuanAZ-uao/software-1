@@ -2,8 +2,8 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { apiNotFoundHandler, errorHandler } from './core/middlewares/index.js';
-import { usersRouter } from './modules/users/index.js';
+import { apiNotFoundHandler, errorHandler } from './src/core/middlewares/index.js';
+import { usersRouter } from './src/modules/users/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
