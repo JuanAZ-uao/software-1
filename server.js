@@ -2,6 +2,8 @@
 
 import { app } from './app.js';
 import { env } from './src/config/index.js';
+// Linkea la conexión a la base de datos (asegúrate que este archivo exista)
+import './src/config/db.js';
 
 const port = env.app.port;
 
