@@ -33,5 +33,5 @@ export const createApp = () => {
   app.use(errorHandler);
 
   return app;
-}
+};
 export const app = createApp();
