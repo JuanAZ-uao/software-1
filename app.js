@@ -19,10 +19,11 @@ export const createApp = () => {
   app.use('/api', apiNotFoundHandler);
 
   // Archivos estáticos y frontend
-  app.use(express.static(path.join(__dirname, '..', 'public')));
+  app.use(express.static(path.join(__dirname, 'public')));
+
   app.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+      res.sendFile(path.join(__dirname, 'public', 'index.html'));
     } else {
       res.status(404).send('404 Not Found');
     }
