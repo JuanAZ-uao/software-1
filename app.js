@@ -13,15 +13,13 @@ export const createApp = () => {
 
   app.use(express.json());
 
+  // Rutas API
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
-
   app.use('/api/users', usersRouter);
-
   app.use('/api', apiNotFoundHandler);
 
+  // Archivos estáticos y frontend
   app.use(express.static(path.join(__dirname, '..', 'public')));
-
-  // Catch-all para rutas no encontradas (404)
   app.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api')) {
       res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
@@ -30,9 +28,11 @@ export const createApp = () => {
     }
   });
 
+  // Middlewares de error
   app.use(errorHandler);
 
   return app;
 };
 
+export const app = createApp();
 export const app = createApp();

@@ -19,5 +19,5 @@ export const env = Object.freeze({
     connectionLimit: numberFrom(process.env.DB_POOL_LIMIT, 10)
   }
 });
-
+export default env;
 export default env;
