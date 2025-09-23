@@ -22,12 +22,3 @@ const createPool = async () => {
 };
 
 export const getPool = () => createPool();
-            error.message
-        );
-      });
-  }
-
-  return poolPromise;
-};
-
-export const getPool = () => createPool();
