@@ -20,4 +20,3 @@ export const env = Object.freeze({
   }
 });
 export default env;
-export default env;
