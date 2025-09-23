@@ -16,12 +16,12 @@ const createPool = async () => {
           connectionLimit: env.db.connectionLimit,
           queueLimit: 0
         })
-      )
-      .catch((error) => {
-        poolPromise = undefined;
-        throw new Error(
-          'The "mysql2" package is required to establish database connections. ' +
-            'Install it with "npm install mysql2" and try again. Original error: ' +
+      );
+  }
+  return poolPromise;
+};
+
+export const getPool = () => createPool();
             error.message
         );
       });
