@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 
 import { apiNotFoundHandler, errorHandler } from './src/core/middlewares/index.js';
 import { usersRouter } from './src/modules/users/index.js';
+import { authRouter } from './src/modules/auth/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +16,7 @@ export const createApp = () => {
 
   // Rutas API
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);
   app.use('/api', apiNotFoundHandler);
 
