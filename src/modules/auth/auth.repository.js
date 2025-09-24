@@ -27,7 +27,7 @@ export const findUserByEmail = async (email) => {
 // Validar contraseña del usuario (temporalmente sin bcrypt)
 export const validateUserPassword = async (userId, password) => {
   const [rows] = await pool.execute(
-    'SELECT clave FROM contraseña WHERE idUsuario = ? AND estado = "activa"',
+    'SELECT clave FROM `contraseña` WHERE idUsuario = ? AND estado = "activa"',
     [userId]
   );
   
@@ -61,7 +61,7 @@ export const createUser = async (userData) => {
     // 2. Insertar contraseña
     console.log('🔑 Insertando contraseña...');
     await connection.execute(
-      'INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES (?, CURDATE(), ?, "activa")',
+      'INSERT INTO `contraseña` (idUsuario, fechaCambio, clave, estado) VALUES (?, CURDATE(), ?, "activa")',
       [userId, password]
     );
     console.log('✅ Contraseña insertada');
@@ -69,22 +69,45 @@ export const createUser = async (userData) => {
     // 3. Insertar en tabla específica según tipo CON RELACIONES CORRECTAS
     console.log('👤 Insertando tipo de usuario:', tipo);
     if (tipo === 'estudiante') {
-      // Usar el primer programa disponible (puedes hacer esto dinámico después)
+      // Asegurar que exista al menos un programa
+      let [progRows] = await connection.execute('SELECT idPrograma FROM programa LIMIT 1');
+      if (progRows.length === 0) {
+        // Crear dependencias mínimas: facultad y programa
+        const [facRes] = await connection.execute('INSERT INTO facultad (nombre) VALUES ("General")');
+        const facId = facRes.insertId;
+        await connection.execute('INSERT INTO programa (nombre, idFacultad) VALUES ("General", ?)', [facId]);
+        ;[progRows] = await connection.execute('SELECT idPrograma FROM programa LIMIT 1');
+      }
+      const programId = progRows[0].idPrograma;
       await connection.execute(
-        'INSERT INTO estudiante (idUsuario, idPrograma, fechaIngreso) VALUES (?, 1, CURDATE())',
-        [userId]
+        'INSERT INTO estudiante (idUsuario, idPrograma) VALUES (?, ?)',
+        [userId, programId]
       );
     } else if (tipo === 'docente') {
-      // Usar la primera unidad académica disponible
+      // Asegurar que exista al menos una unidad académica
+      let [uaRows] = await connection.execute('SELECT idUnidadAcademica FROM unidadAcademica LIMIT 1');
+      if (uaRows.length === 0) {
+        const [facRes] = await connection.execute('INSERT INTO facultad (nombre) VALUES ("General")');
+        const facId = facRes.insertId;
+        await connection.execute('INSERT INTO unidadAcademica (nombre, idFacultad) VALUES ("General", ?)', [facId]);
+        ;[uaRows] = await connection.execute('SELECT idUnidadAcademica FROM unidadAcademica LIMIT 1');
+      }
+      const uaId = uaRows[0].idUnidadAcademica;
       await connection.execute(
-        'INSERT INTO docente (idUsuario, idUnidadAcademica, fechaContratacion) VALUES (?, 1, CURDATE())',
-        [userId]
+        'INSERT INTO docente (idUsuario, idUnidadAcademica) VALUES (?, ?)',
+        [userId, uaId]
       );
     } else if (tipo === 'secretaria') {
-      // Usar la primera facultad disponible
+      // Asegurar que exista al menos una facultad
+      let [facRows] = await connection.execute('SELECT idFacultad FROM facultad LIMIT 1');
+      if (facRows.length === 0) {
+        const [facRes] = await connection.execute('INSERT INTO facultad (nombre) VALUES ("General")');
+        facRows = [{ idFacultad: facRes.insertId }];
+      }
+      const facId = facRows[0].idFacultad;
       await connection.execute(
-        'INSERT INTO secretariaAcademica (idUsuario, idFacultad, fechaAsignacion) VALUES (?, 1, CURDATE())',
-        [userId]
+        'INSERT INTO secretariaAcademica (idUsuario, idFacultad) VALUES (?, ?)',
+        [userId, facId]
       );
     }
     console.log('✅ Tipo de usuario insertado');
