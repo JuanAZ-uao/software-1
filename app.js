@@ -35,6 +35,43 @@ export const createApp = () => {
     }
   });
   
+  // Endpoint para listar todos los usuarios (para debugging)
+  app.get('/api/usuarios', async (_req, res) => {
+    try {
+      const pool = (await import('./src/db/pool.js')).default;
+      const [rows] = await pool.execute(`
+        SELECT 
+          u.idUsuario,
+          u.nombre,
+          u.apellidos,
+          u.email,
+          u.telefono,
+          c.clave as password,
+          CASE 
+            WHEN e.idUsuario IS NOT NULL THEN 'estudiante'
+            WHEN d.idUsuario IS NOT NULL THEN 'docente' 
+            WHEN s.idUsuario IS NOT NULL THEN 'secretaria'
+            ELSE 'usuario'
+          END as tipo
+        FROM usuario u 
+        LEFT JOIN contraseña c ON u.idUsuario = c.idUsuario AND c.estado = 'activa'
+        LEFT JOIN estudiante e ON u.idUsuario = e.idUsuario
+        LEFT JOIN docente d ON u.idUsuario = d.idUsuario  
+        LEFT JOIN secretariaAcademica s ON u.idUsuario = s.idUsuario
+        ORDER BY u.idUsuario DESC
+      `);
+      res.json({ 
+        success: true, 
+        usuarios: rows
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+  });
+  
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);
   app.use('/api', apiNotFoundHandler);

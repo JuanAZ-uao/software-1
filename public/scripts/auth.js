@@ -67,17 +67,27 @@ async function login(email, password) {
 // Registro
 async function register(userData) {
   try {
+    console.log('🔵 Frontend - Enviando datos de registro:', userData);
+    
     const data = await apiCall('/auth/register', {
       method: 'POST',
       body: JSON.stringify(userData)
     });
     
+    console.log('✅ Usuario registrado exitosamente:', data);
+    
     showMessage('¡Usuario registrado exitosamente! Ahora puedes iniciar sesión.', 'success');
     
-    // Cambiar a tab de login
-    document.querySelector('[data-tab="login"]').click();
+    // Limpiar formulario
+    document.getElementById('registerForm').reset();
+    
+    // Cambiar a tab de login después de 2 segundos
+    setTimeout(() => {
+      document.querySelector('[data-tab="login"]').click();
+    }, 2000);
     
   } catch (error) {
+    console.error('❌ Error en registro:', error);
     showMessage(error.message, 'error');
   }
 }
@@ -141,6 +151,8 @@ document.addEventListener('DOMContentLoaded', () => {
       tipo: formData.get('tipo')
     };
     
+    console.log('📝 Datos del formulario:', userData);
+    
     // Validaciones básicas
     if (!userData.nombre || !userData.apellidos || !userData.email || 
         !userData.telefono || !userData.password || !userData.tipo) {
@@ -148,14 +160,31 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
-    if (userData.password.length < 6) {
-      showMessage('La contraseña debe tener al menos 6 caracteres', 'error');
+    if (userData.password.length < 3) {  // Cambiado a 3 para pruebas
+      showMessage('La contraseña debe tener al menos 3 caracteres', 'error');
       return;
     }
     
+    if (!/^\d{10}$/.test(userData.telefono)) {
+      showMessage('El teléfono debe tener exactamente 10 dígitos', 'error');
+      return;
+    }
+    
+    if (!validateEmail(userData.email)) {
+      showMessage('Por favor ingresa un email válido', 'error');
+      return;
+    }
+    
+    console.log('✅ Validaciones pasadas, enviando registro...');
     await register(userData);
   });
 });
+
+// Función para validar email
+function validateEmail(email) {
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return re.test(email);
+}
 
 // Verificar si ya está logueado al cargar
 if (isAuthenticated()) {

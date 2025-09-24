@@ -41,26 +41,33 @@ export const validateUserPassword = async (userId, password) => {
 export const createUser = async (userData) => {
   const { nombre, apellidos, email, telefono, password, tipo } = userData;
   
+  console.log('🔵 Repository - Creando usuario:', { nombre, apellidos, email, telefono, tipo });
+  
   const connection = await pool.getConnection();
   
   try {
     await connection.beginTransaction();
     
     // 1. Insertar en tabla usuario
+    console.log('📝 Insertando en tabla usuario...');
     const [userResult] = await connection.execute(
       'INSERT INTO usuario (nombre, apellidos, email, telefono) VALUES (?, ?, ?, ?)',
       [nombre, apellidos, email, telefono]
     );
     
     const userId = userResult.insertId;
+    console.log('✅ Usuario creado con ID:', userId);
     
     // 2. Insertar contraseña
+    console.log('🔑 Insertando contraseña...');
     await connection.execute(
       'INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES (?, CURDATE(), ?, "activa")',
       [userId, password]
     );
+    console.log('✅ Contraseña insertada');
     
     // 3. Insertar en tabla específica según tipo
+    console.log('👤 Insertando tipo de usuario:', tipo);
     if (tipo === 'estudiante') {
       await connection.execute(
         'INSERT INTO estudiante (idUsuario, fechaIngreso) VALUES (?, CURDATE())',
@@ -77,8 +84,10 @@ export const createUser = async (userData) => {
         [userId]
       );
     }
+    console.log('✅ Tipo de usuario insertado');
     
     await connection.commit();
+    console.log('✅ Transacción completada exitosamente');
     
     return {
       idUsuario: userId,
@@ -90,6 +99,7 @@ export const createUser = async (userData) => {
     };
     
   } catch (error) {
+    console.error('❌ Error en createUser:', error);
     await connection.rollback();
     throw error;
   } finally {

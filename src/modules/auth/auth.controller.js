@@ -22,21 +22,33 @@ export const loginUser = async (req, res) => {
 
 // Registro
 export const registerUser = async (req, res) => {
+  console.log('🔵 Registro - Datos recibidos:', req.body);
+  
   const userData = req.body;
   
-  const newUser = await registerUserService(userData);
-  
-  res.status(201).json({
-    success: true,
-    message: 'Usuario registrado exitosamente',
-    user: {
-      id: newUser.idUsuario,
-      name: `${newUser.nombre} ${newUser.apellidos}`,
-      email: newUser.email,
-      telefono: newUser.telefono,
-      tipo: newUser.tipo
-    }
-  });
+  try {
+    const newUser = await registerUserService(userData);
+    
+    console.log('✅ Usuario registrado exitosamente:', newUser);
+    
+    res.status(201).json({
+      success: true,
+      message: 'Usuario registrado exitosamente',
+      user: {
+        id: newUser.idUsuario,
+        name: `${newUser.nombre} ${newUser.apellidos}`,
+        email: newUser.email,
+        telefono: newUser.telefono,
+        tipo: newUser.tipo
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error en registro:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Error al registrar usuario'
+    });
+  }
 };
 
 // Obtener usuario actual (para verificar sesión)
