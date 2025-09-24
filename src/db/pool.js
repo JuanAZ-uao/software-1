@@ -1,24 +1,20 @@
 import { env } from '../config/index.js';
+import mysql from 'mysql2/promise';
 
-let poolPromise;
+// Crear el pool de conexiones
+const pool = mysql.createPool({
+  host: env.db.host,
+  user: env.db.user,
+  password: env.db.password,
+  database: env.db.database,
+  port: env.db.port,
+  waitForConnections: true,
+  connectionLimit: env.db.connectionLimit,
+  queueLimit: 0
+});
 
-const createPool = async () => {
-  if (!poolPromise) {
-    poolPromise = import('mysql2/promise')
-      .then(({ default: mysql }) =>
-        mysql.createPool({
-          host: env.db.host,
-          user: env.db.user,
-          password: env.db.password,
-          database: env.db.database,
-          port: env.db.port,
-          waitForConnections: true,
-          connectionLimit: env.db.connectionLimit,
-          queueLimit: 0
-        })
-      );
-  }
-  return poolPromise;
-};
+// Exportación por defecto
+export default pool;
 
-export const getPool = () => createPool();
+// También exportar como named export para compatibilidad
+export const getPool = () => pool;
