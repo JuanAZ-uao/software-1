@@ -1,4 +1,3 @@
-
 // Frontend Auth - Conectado con BD real
 const API_BASE = 'http://localhost:3000/api';
 
@@ -160,7 +159,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
-    if (userData.password.length < 1) {  // Solo verificar que no esté vacía
+    // QUITAMOS LA VALIDACIÓN DE LONGITUD MÍNIMA
+    if (!userData.password || userData.password.trim().length === 0) {
       showMessage('La contraseña no puede estar vacía', 'error');
       return;
     }

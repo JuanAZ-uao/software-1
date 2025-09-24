@@ -30,8 +30,8 @@ export const validateRegister = (req, res, next) => {
     throw new ValidationError('Email inválido');
   }
   
-  // Validar contraseña
-  if (!password || password.length < 1) {
+  // Validar contraseña - QUITAMOS LA RESTRICCIÓN DE LONGITUD
+  if (!password || password.trim().length === 0) {
     throw new ValidationError('La contraseña no puede estar vacía');
   }
   

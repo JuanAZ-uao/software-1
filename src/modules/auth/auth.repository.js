@@ -66,21 +66,24 @@ export const createUser = async (userData) => {
     );
     console.log('✅ Contraseña insertada');
     
-    // 3. Insertar en tabla específica según tipo
+    // 3. Insertar en tabla específica según tipo CON RELACIONES CORRECTAS
     console.log('👤 Insertando tipo de usuario:', tipo);
     if (tipo === 'estudiante') {
+      // Usar el primer programa disponible (puedes hacer esto dinámico después)
       await connection.execute(
-        'INSERT INTO estudiante (idUsuario, fechaIngreso) VALUES (?, CURDATE())',
+        'INSERT INTO estudiante (idUsuario, idPrograma, fechaIngreso) VALUES (?, 1, CURDATE())',
         [userId]
       );
     } else if (tipo === 'docente') {
+      // Usar la primera unidad académica disponible
       await connection.execute(
-        'INSERT INTO docente (idUsuario, fechaContratacion) VALUES (?, CURDATE())',
+        'INSERT INTO docente (idUsuario, idUnidadAcademica, fechaContratacion) VALUES (?, 1, CURDATE())',
         [userId]
       );
     } else if (tipo === 'secretaria') {
+      // Usar la primera facultad disponible
       await connection.execute(
-        'INSERT INTO secretariaAcademica (idUsuario, fechaAsignacion) VALUES (?, CURDATE())',
+        'INSERT INTO secretariaAcademica (idUsuario, idFacultad, fechaAsignacion) VALUES (?, 1, CURDATE())',
         [userId]
       );
     }
