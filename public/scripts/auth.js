@@ -160,8 +160,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
-    if (userData.password.length < 3) {  // Cambiado a 3 para pruebas
-      showMessage('La contraseña debe tener al menos 3 caracteres', 'error');
+    if (userData.password.length < 1) {  // Solo verificar que no esté vacía
+      showMessage('La contraseña no puede estar vacía', 'error');
       return;
     }
     

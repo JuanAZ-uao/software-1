@@ -31,8 +31,8 @@ export const validateRegister = (req, res, next) => {
   }
   
   // Validar contraseña
-  if (password.length < 6) {
-    throw new ValidationError('La contraseña debe tener al menos 6 caracteres');
+  if (!password || password.length < 1) {
+    throw new ValidationError('La contraseña no puede estar vacía');
   }
   
   // Validar tipo de usuario

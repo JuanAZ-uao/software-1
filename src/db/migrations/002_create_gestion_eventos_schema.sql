@@ -36,7 +36,7 @@ CREATE TABLE programa (
 
 -- Tabla Usuario (superclase)
 CREATE TABLE usuario (
-    idUsuario INT PRIMARY KEY,
+    idUsuario INT AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
     apellidos VARCHAR(100) NOT NULL,
     email VARCHAR(150) NOT NULL,
