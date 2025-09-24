@@ -24,7 +24,7 @@ export const findUserByEmail = async (email) => {
   return rows[0] || null;
 };
 
-// Validar contraseña del usuario
+// Validar contraseña del usuario (temporalmente sin bcrypt)
 export const validateUserPassword = async (userId, password) => {
   const [rows] = await pool.execute(
     'SELECT clave FROM contraseña WHERE idUsuario = ? AND estado = "activa"',
@@ -33,7 +33,8 @@ export const validateUserPassword = async (userId, password) => {
   
   if (!rows[0]) return false;
   
-  return await bcrypt.compare(password, rows[0].clave);
+  // Comparación simple por ahora (para debugging)
+  return password === rows[0].clave;
 };
 
 // Crear nuevo usuario

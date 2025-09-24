@@ -16,6 +16,25 @@ export const createApp = () => {
 
   // Rutas API
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  
+  // Endpoint de prueba para verificar BD
+  app.get('/api/test-db', async (_req, res) => {
+    try {
+      const pool = (await import('./src/db/pool.js')).default;
+      const [rows] = await pool.execute('SELECT COUNT(*) as count FROM usuario');
+      res.json({ 
+        success: true, 
+        message: 'BD conectada correctamente',
+        usuarios: rows[0].count 
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+  });
+  
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);
   app.use('/api', apiNotFoundHandler);

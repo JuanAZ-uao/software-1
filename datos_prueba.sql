@@ -1,5 +1,5 @@
--- Datos de prueba para autenticación
--- Contraseñas hash para: 123, admin, test
+-- Datos de prueba para autenticación - CONTRASEÑAS SIMPLES
+-- Usuarios con contraseñas: 123, admin, test
 
 USE gestionEventos;
 
@@ -16,14 +16,11 @@ INSERT INTO usuario (idUsuario, nombre, apellidos, email, telefono) VALUES
 (2, 'María', 'García', 'maria@test.com', '1234567891'), 
 (3, 'Carlos', 'López', 'admin@test.com', '1234567892');
 
--- Insertar contraseñas (hash de: 123, admin, test respectivamente)
--- Hash generado con bcrypt para '123': $2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi
--- Hash generado con bcrypt para 'admin': $2a$10$yL4FZsC2yS8s.JVfS3j3FOdqGQ.lZi8j8.2/7KzK1sW6rA0xm.HLe
--- Hash generado con bcrypt para 'test': $2a$10$WE2wS.tT2j8A8H0V3VgTJ.BhJ2oZhA2uA8KvY0vE6t2oP4I0xE8Ma
+-- Insertar contraseñas simples (sin hash por ahora para debugging)
 INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES
-(1, CURDATE(), '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'activa'),
-(2, CURDATE(), '$2a$10$yL4FZsC2yS8s.JVfS3j3FOdqGQ.lZi8j8.2/7KzK1sW6rA0xm.HLe', 'activa'),
-(3, CURDATE(), '$2a$10$WE2wS.tT2j8A8H0V3VgTJ.BhJ2oZhA2uA8KvY0vE6t2oP4I0xE8Ma', 'activa');
+(1, CURDATE(), '123', 'activa'),
+(2, CURDATE(), 'admin', 'activa'),
+(3, CURDATE(), 'test', 'activa');
 
 -- Asignar tipos de usuario
 INSERT INTO estudiante (idUsuario, fechaIngreso) VALUES (1, CURDATE());
@@ -37,6 +34,7 @@ SELECT
     u.apellidos,
     u.email,
     u.telefono,
+    c.clave as password_simple,
     CASE 
         WHEN e.idUsuario IS NOT NULL THEN 'estudiante'
         WHEN d.idUsuario IS NOT NULL THEN 'docente' 
@@ -44,6 +42,7 @@ SELECT
         ELSE 'usuario'
     END as tipo
 FROM usuario u 
+LEFT JOIN contraseña c ON u.idUsuario = c.idUsuario AND c.estado = 'activa'
 LEFT JOIN estudiante e ON u.idUsuario = e.idUsuario
 LEFT JOIN docente d ON u.idUsuario = d.idUsuario  
 LEFT JOIN secretariaAcademica s ON u.idUsuario = s.idUsuario

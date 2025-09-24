@@ -20,7 +20,7 @@ export const authenticate = async (email, password) => {
   return userData;
 };
 
-// Registrar nuevo usuario
+// Registrar nuevo usuario (sin hash temporalmente)
 export const registerUser = async (userData) => {
   const { nombre, apellidos, email, telefono, password, tipo } = userData;
   
@@ -30,16 +30,13 @@ export const registerUser = async (userData) => {
     throw new ValidationError('El email ya está registrado');
   }
   
-  // Hash de la contraseña
-  const hashedPassword = await bcrypt.hash(password, 10);
-  
-  // Crear usuario
+  // Crear usuario sin hash por ahora
   const newUser = await createUser({
     nombre,
     apellidos, 
     email,
     telefono,
-    password: hashedPassword,
+    password, // Sin hash
     tipo
   });
   
