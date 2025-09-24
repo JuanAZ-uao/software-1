@@ -242,3 +242,15 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+-- Insertar usuarios de prueba en la tabla usuario
+INSERT INTO usuario (idUsuario, nombre, apellidos, email, telefono) VALUES
+(1, 'Ana', 'García', 'estudiante@uni.edu', '1234567890'),
+(2, 'Carlos', 'Pérez', 'profesor@uni.edu', '1234567891'),
+(3, 'Admin', 'Sistema', 'admin@uni.edu', '1234567892');
+
+-- Insertar contraseñas (hash de '123456')
+INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES
+(1, CURDATE(), '$2b$10$hashedPassword123456', 'activa'),
+(2, CURDATE(), '$2b$10$hashedPassword123456', 'activa'),
+(3, CURDATE(), '$2b$10$hashedPassword123456', 'activa');
