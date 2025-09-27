@@ -1,7 +1,18 @@
+/**
+ * header.js - Componente de cabecera (Header)
+ *
+ * Este componente renderiza la barra superior de la aplicación, mostrando la marca,
+ * navegación principal, notificaciones, menú de usuario y controles de tema.
+ * Gestiona interacciones como logout, cambio de tema y apertura de menús.
+ */
 
 import { getCurrentUser, logout } from '../auth.js';
 import { getState, setState } from '../utils/state.js';
 
+/**
+ * Renderiza la cabecera principal con navegación, notificaciones y perfil de usuario.
+ * @returns {string} HTML del header
+ */
 export function renderHeader(){
   const user = getCurrentUser();
   const role = user?.role || 'Estudiante';
@@ -39,7 +50,12 @@ export function renderHeader(){
   `;
 }
 
-// Interacciones header y dropdowns
+/**
+ * Listeners globales para interacciones del header y menús
+ * - Logout
+ * - Cambio de tema
+ * - Menú de usuario y navegación móvil
+ */
 document.addEventListener('click', (e) => {
   const avatar = e.target.closest('.avatar');
   const profileDd = document.getElementById('profile-dd');

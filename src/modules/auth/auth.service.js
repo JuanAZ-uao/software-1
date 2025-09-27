@@ -1,9 +1,24 @@
-// src/modules/auth/auth.service.js
+/**
+ * auth.service.js - Servicio de autenticación
+ *
+ * Este archivo contiene la lógica de negocio para autenticación:
+ * - Autenticar usuario (login)
+ * - Registrar nuevo usuario
+ *
+ * Llama a funciones del repositorio y lanza errores de validación si corresponde.
+ */
+
 import bcrypt from 'bcryptjs';
 import { ValidationError } from '../../core/errors/validation-error.js';
 import { findUserByEmail, createUser, validateUserPassword } from './auth.repository.js';
 
-// Autenticar usuario existente
+/**
+ * Autentica un usuario existente por email y contraseña
+ * @param {string} email
+ * @param {string} password
+ * @returns {object} Usuario autenticado
+ * @throws {ValidationError} Si las credenciales son inválidas
+ */
 export const authenticate = async (email, password) => {
   const user = await findUserByEmail(email);
   if (!user) {
@@ -20,7 +35,12 @@ export const authenticate = async (email, password) => {
   return userData;
 };
 
-// Registrar nuevo usuario (sin hash temporalmente)
+/**
+ * Registra un nuevo usuario (sin hash temporalmente)
+ * @param {object} userData
+ * @returns {object} Usuario creado
+ * @throws {ValidationError} Si el email ya está registrado
+ */
 export const registerUser = async (userData) => {
   const { nombre, apellidos, email, telefono, password, tipo } = userData;
   

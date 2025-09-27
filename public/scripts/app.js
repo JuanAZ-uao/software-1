@@ -1,4 +1,3 @@
-
 import { initRouter, navigateTo } from './utils/router.js';
 import { subscribe, initState } from './utils/state.js';
 import { qs, ensureTheme } from './utils/helpers.js';
@@ -11,7 +10,7 @@ import { renderUsers } from './components/users.js';
 import { renderCalendar } from './components/calendar.js';
 import { renderNotifications } from './components/notifications.js';
 import { renderSettings } from './components/settings.js';
-import { renderAuthView, isAuthenticated } from './auth.js';
+import { renderAuthView, isAuthenticated, bindAuthEvents } from './auth.js';
 
 const mount = document.getElementById('app');
 
@@ -45,9 +44,9 @@ function renderRoute(route) {
     case 'settings': view = renderSettings(); break;
     default: view = renderDashboard(); break;
   }
-
   if (route === 'login') {
     mount.innerHTML = `<main class="auth"><div class="card auth-card"><div class="card-body">${view}</div></div></main><div id="toast" class="toast"></div>`;
+    bindAuthEvents();
     return;
   }
   mount.innerHTML = renderShell(view);

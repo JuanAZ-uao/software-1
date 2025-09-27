@@ -1,7 +1,17 @@
+/**
+ * profile.js - Componente de perfil de usuario
+ *
+ * Este componente renderiza la vista de perfil, mostrando información del usuario
+ * y permitiendo editar bio e intereses. Utiliza el usuario autenticado actual.
+ */
 
 import { getCurrentUser } from '../auth.js';
 import { toast } from '../utils/helpers.js';
 
+/**
+ * Renderiza la vista de perfil de usuario con formulario de edición.
+ * @returns {string} HTML de la vista de perfil
+ */
 export function renderProfile(){
   const u = getCurrentUser();
   return `
@@ -27,6 +37,9 @@ export function renderProfile(){
   `;
 }
 
+/**
+ * Listener global para guardar cambios en el perfil
+ */
 document.addEventListener('submit', (e) => {
   if (e.target?.id === 'profileForm') {
     e.preventDefault();

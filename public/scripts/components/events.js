@@ -1,8 +1,16 @@
+/**
+ * events.js - Componente de gestión de eventos
+ *
+ * Este componente renderiza la vista de eventos, mostrando la lista de eventos,
+ * filtros por estado, formulario de creación/edición y controles de búsqueda.
+ * Permite a usuarios crear, editar y filtrar eventos según su rol y estado.
+ */
 
 import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
 import { qs, toast, todayISO, validateFutureDate } from '../utils/helpers.js';
 
+// Categorías y subcategorías de eventos
 const CATEGORIES = {
   'Académicos': ['Conferencias','Seminarios','Talleres','Cursos'],
   'Investigación': ['Presentaciones','Simposios','Congresos','Grupos de Estudio'],
@@ -14,16 +22,23 @@ const CATEGORIES = {
   'Tecnológicos': ['Hackathons','Bootcamps','Demos','Innovación'],
 };
 
+// Estados posibles de un evento
 const STATUS = ['Borrador','Publicado','Cancelado'];
 
+/**
+ * Renderiza la vista principal de eventos con pestañas de estado y tabla de eventos.
+ * @returns {string} HTML de la vista de eventos
+ */
 export function renderEvents(){
   const { events, organizations } = getState();
   const user = getCurrentUser();
   const isProf = user.role === 'Profesor';
   const isAdmin = user.role === 'Administrador';
 
+  // Pestañas de estado
   const tabs = STATUS.map(s=>`<button class="tab" data-tab="${s}">${s}</button>`).join('');
 
+  // Filas de la tabla de eventos filtrados por estado
   const rows = (filterStatus='') => events
     .filter(e => !filterStatus || e.status === filterStatus)
     .map(e=> `
@@ -37,6 +52,7 @@ export function renderEvents(){
       </tr>
     `).join('');
 
+  // Opciones de organizaciones para el formulario
   const orgOptions = ['','- Ninguna -', ...organizations.map(o=>`${o.id}::${o.name}`)]
     .map(v=> {
       if (v === '' || v === '- Ninguna -') return `<option value="">${v||'- Seleccionar -'}</option>`;
@@ -44,6 +60,7 @@ export function renderEvents(){
       return `<option value="${id}">${name}</option>`;
     }).join('');
 
+  // Opciones de categorías
   const catOptions = Object.keys(CATEGORIES).map(c=>`<option>${c}</option>`).join('');
 
   return `

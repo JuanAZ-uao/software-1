@@ -1,10 +1,10 @@
-
 const routes = ['login','dashboard','profile','organizations','events','users','calendar','notifications','settings'];
 
 export function initRouter(render){
   function handle(){
-    const hash = location.hash.replace('#','') || 'dashboard';
-    const route = routes.includes(hash) ? hash : 'dashboard';
+    // Si no hay hash, ir a login por defecto
+    const hash = location.hash.replace('#','') || 'login';
+    const route = routes.includes(hash) ? hash : 'login';
     render(route);
     highlightNav(route);
   }

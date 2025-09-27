@@ -1,7 +1,20 @@
-// src/modules/auth/auth.controller.js
+/**
+ * auth.controller.js - Controlador de autenticación
+ *
+ * Este archivo define los controladores para las rutas de autenticación:
+ * - Login de usuario
+ * - Registro de usuario
+ * - Obtener usuario actual (requiere autenticación)
+ *
+ * Los controladores reciben la petición HTTP, llaman a los servicios y devuelven la respuesta.
+ */
+
 import { authenticate, registerUser as registerUserService } from './auth.service.js';
 
-// Login
+/**
+ * Controlador para login de usuario
+ * Llama al servicio authenticate y responde con los datos del usuario
+ */
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
   
@@ -20,7 +33,10 @@ export const loginUser = async (req, res) => {
   });
 };
 
-// Registro
+/**
+ * Controlador para registro de usuario
+ * Llama al servicio registerUser y responde con los datos del nuevo usuario
+ */
 export const registerUser = async (req, res) => {
   console.log('🔵 Registro - Datos recibidos:', req.body);
   
@@ -51,7 +67,10 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// Obtener usuario actual (para verificar sesión)
+/**
+ * Controlador para obtener el usuario actual (requiere autenticación)
+ * Por ahora retorna error (no implementado)
+ */
 export const getCurrentUser = async (req, res) => {
   // Esta función requeriría middleware de autenticación JWT
   // Por ahora retornamos error

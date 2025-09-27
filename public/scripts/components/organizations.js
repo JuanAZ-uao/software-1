@@ -1,9 +1,21 @@
+/**
+ * organizations.js - Componente de organizaciones
+ *
+ * Este componente renderiza la vista de organizaciones, mostrando la lista,
+ * formulario de registro y controles de búsqueda. Permite crear nuevas organizaciones.
+ * Utiliza el estado global para obtener y actualizar organizaciones.
+ */
 
 import { getState, setState } from '../utils/state.js';
 import { toast, validateURL } from '../utils/helpers.js';
 
+/**
+ * Renderiza la vista principal de organizaciones con tabla y formulario de registro.
+ * @returns {string} HTML de la vista de organizaciones
+ */
 export function renderOrganizations(){
   const { organizations } = getState();
+  // Filas de la tabla de organizaciones
   const rows = organizations.map(o=> `
     <tr>
       <td>${o.name}</td>
@@ -50,6 +62,9 @@ export function renderOrganizations(){
   `;
 }
 
+/**
+ * Listener global para el formulario de registro de organización
+ */
 document.addEventListener('submit', (e) => {
   if (e.target?.id === 'orgForm') {
     e.preventDefault();

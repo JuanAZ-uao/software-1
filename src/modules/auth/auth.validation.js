@@ -1,7 +1,16 @@
 // src/modules/auth/auth.validation.js
+/**
+ * auth.validation.js - Validaciones de autenticación
+ *
+ * Define middlewares para validar los datos de login y registro de usuario.
+ * Lanza ValidationError si los datos no cumplen los requisitos.
+ */
+
 import { ValidationError } from '../../core/errors/validation-error.js';
 
-// Validar datos de login
+/**
+ * Valida los datos de login (email y password requeridos y formato válido)
+ */
 export const validateLogin = (req, res, next) => {
   const { email, password } = req.body;
   
@@ -16,7 +25,9 @@ export const validateLogin = (req, res, next) => {
   next();
 };
 
-// Validar datos de registro
+/**
+ * Valida los datos de registro de usuario
+ */
 export const validateRegister = (req, res, next) => {
   const { nombre, apellidos, email, telefono, password, tipo } = req.body;
   
@@ -30,8 +41,8 @@ export const validateRegister = (req, res, next) => {
     throw new ValidationError('Email inválido');
   }
   
-  // Validar contraseña
-  if (!password || password.length < 1) {
+  // Validar contraseña - sin restricción de longitud
+  if (!password || password.trim().length === 0) {
     throw new ValidationError('La contraseña no puede estar vacía');
   }
   
@@ -49,7 +60,9 @@ export const validateRegister = (req, res, next) => {
   next();
 };
 
-// Función auxiliar para validar email
+/**
+ * Función auxiliar para validar formato de email
+ */
 function isValidEmail(email) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);

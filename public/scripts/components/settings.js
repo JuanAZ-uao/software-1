@@ -1,3 +1,9 @@
+/**
+ * settings.js - Componente de configuración de usuario
+ *
+ * Este componente renderiza la vista de configuración, permitiendo cambiar el tema
+ * y las preferencias de notificaciones. Utiliza localStorage para persistir opciones.
+ */
 
 export function renderSettings(){
   const theme = localStorage.getItem('uc_theme')||'light';
@@ -22,6 +28,9 @@ export function renderSettings(){
   `;
 }
 
+/**
+ * Listeners globales para cambios de tema y notificaciones
+ */
 document.addEventListener('click', (e) => {
   if (e.target?.id === 'themeToggle2') {
     const html = document.documentElement;

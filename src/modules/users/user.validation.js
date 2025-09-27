@@ -1,12 +1,24 @@
+/**
+ * user.validation.js - Validaciones de usuarios
+ *
+ * Define middlewares para validar los datos de creación y actualización de usuario.
+ * Lanza ValidationError si los datos no cumplen los requisitos.
+ */
+
 import { ValidationError } from '../../core/errors/index.js';
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/u;
 
+// Normaliza el nombre eliminando espacios extra
 const normalizeName = (name) => name.trim().replace(/\s+/g, ' ');
 
+// Construye un error de validación con detalles
 const buildValidationError = (details) =>
   new ValidationError('Invalid user payload provided', { details });
 
+/**
+ * Valida los datos para crear un usuario
+ */
 export const validateCreateUser = (req, _res, next) => {
   const { name, email } = req.body ?? {};
   const errors = {};
@@ -31,6 +43,9 @@ export const validateCreateUser = (req, _res, next) => {
   next();
 };
 
+/**
+ * Valida los datos para actualizar un usuario
+ */
 export const validateUpdateUser = (req, _res, next) => {
   const { name, email } = req.body ?? {};
   const errors = {};

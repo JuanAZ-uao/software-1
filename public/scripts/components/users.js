@@ -1,8 +1,19 @@
+/**
+ * users.js - Componente de gestión de usuarios
+ *
+ * Este componente renderiza la vista de usuarios, permitiendo a un administrador
+ * ver la lista de usuarios y cambiar sus roles. Solo accesible para administradores.
+ * Utiliza el estado global para obtener y actualizar usuarios.
+ */
 
 import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
 import { toast } from '../utils/helpers.js';
 
+/**
+ * Renderiza la vista de usuarios con tabla y controles de cambio de rol.
+ * @returns {string} HTML de la vista de usuarios
+ */
 export function renderUsers(){
   const me = getCurrentUser();
   if (me.role !== 'Administrador') return '<div class="card"><div class="card-body">Acceso denegado.</div></div>';
@@ -25,6 +36,9 @@ export function renderUsers(){
     </div>`;
 }
 
+/**
+ * Listener global para cambiar el rol de un usuario
+ */
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-role]');
   if (!btn) return;
