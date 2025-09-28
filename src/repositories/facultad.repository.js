@@ -1,0 +1,1 @@
+// ...existing code from src/modules/facultad/facultad.repository.js

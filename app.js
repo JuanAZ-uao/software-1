@@ -3,8 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { apiNotFoundHandler, errorHandler } from './src/core/middlewares/index.js';
-import { usersRouter } from './src/modules/users/index.js';
-import { authRouter } from './src/modules/auth/index.js';
+import { usersRouter } from './src/routes/users.routes.js';
+import { authRouter } from './src/routes/auth.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
