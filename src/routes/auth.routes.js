@@ -10,3 +10,6 @@ router.post('/register', validateRegister, asyncHandler(registerUser));
 router.get('/me', asyncHandler(getCurrentUser));
 
 export const authRouter = router;
+import { forgotPassword, resetPassword } from '../controllers/auth.controller.js';
+router.post('/forgot-password', asyncHandler(forgotPassword));
+router.post('/reset-password', asyncHandler(resetPassword));

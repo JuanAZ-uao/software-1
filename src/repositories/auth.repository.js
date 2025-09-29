@@ -75,3 +75,10 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
 	// 3. Retornar el usuario creado
 	return { idUsuario, nombre, apellidos, email, telefono, tipo };
 };
+// ...existing code...
+export const updateUserPassword = async (userId, newPassword) => {
+    await pool.execute(
+        'UPDATE contraseña SET clave = ?, fechaCambio = NOW(), estado = "activa" WHERE idUsuario = ?',
+        [newPassword, userId]
+    );
+};

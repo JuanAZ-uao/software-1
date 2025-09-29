@@ -147,7 +147,7 @@ function showMessage(text, type = 'info') {
 }
 
 /**
- * Renderiza el formulario de login/registro como HTML
+ * Renderiza el formulario de login/registro y recuperación como HTML
  * @returns {string}
  */
 export function renderAuthView() {
@@ -171,6 +171,9 @@ export function renderAuthView() {
             </div>
             <button type="submit" class="btn primary">Iniciar Sesión</button>
           </form>
+          <div style="text-align:right; margin-top:8px;">
+            <a href="#" id="forgotPasswordLink" style="font-size:13px;">¿Olvidaste tu contraseña?</a>
+          </div>
         </div>
         <div id="register-form" class="tab-content">
           <form id="registerForm">
@@ -206,6 +209,16 @@ export function renderAuthView() {
             <button type="submit" class="btn primary">Registrarse</button>
           </form>
         </div>
+        <div id="forgot-form" class="tab-content" style="display:none">
+          <form id="forgotForm">
+            <div class="form-group">
+              <label>Ingresa tu email para recuperar tu contraseña</label>
+              <input type="email" name="email" required placeholder="tu@universidad.edu">
+            </div>
+            <button type="submit" class="btn primary">Enviar enlace</button>
+            <button type="button" class="btn" id="backToLogin" style="margin-left:8px;">Volver</button>
+          </form>
+        </div>
         <div id="message" class="message"></div>
       </div>
     </div>
@@ -213,7 +226,7 @@ export function renderAuthView() {
 }
 
 /**
- * Vuelve a conectar los event listeners de login/registro tras renderizar la vista
+ * Vuelve a conectar los event listeners de login/registro/recuperación tras renderizar la vista
  */
 export function bindAuthEvents() {
   // Tabs functionality
@@ -226,6 +239,7 @@ export function bindAuthEvents() {
       document.getElementById(`${tabName}-form`).classList.add('active');
     });
   });
+
   // Login form
   const loginForm = document.getElementById('loginForm');
   if (loginForm) {
@@ -241,6 +255,7 @@ export function bindAuthEvents() {
       await login(email, password);
     });
   }
+
   // Register form
   const registerForm = document.getElementById('registerForm');
   if (registerForm) {
@@ -259,10 +274,6 @@ export function bindAuthEvents() {
         showMessage('Por favor completa todos los campos', 'error');
         return;
       }
-      if (!userData.password || userData.password.trim().length === 0) {
-        showMessage('La contraseña no puede estar vacía', 'error');
-        return;
-      }
       if (!/^\d{10}$/.test(userData.telefono)) {
         showMessage('El teléfono debe tener exactamente 10 dígitos', 'error');
         return;
@@ -272,6 +283,48 @@ export function bindAuthEvents() {
         return;
       }
       await register(userData);
+    });
+  }
+
+  // Mostrar formulario de recuperación
+  const forgotLink = document.getElementById('forgotPasswordLink');
+  if (forgotLink) {
+    forgotLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('login-form').classList.remove('active');
+      document.getElementById('register-form').classList.remove('active');
+      document.getElementById('forgot-form').style.display = 'block';
+      document.getElementById('forgot-form').classList.add('active');
+    });
+  }
+
+  // Volver a login desde recuperación
+  const backBtn = document.getElementById('backToLogin');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      document.getElementById('forgot-form').style.display = 'none';
+      document.getElementById('forgot-form').classList.remove('active');
+      document.getElementById('login-form').classList.add('active');
+    });
+  }
+
+  // Enviar email de recuperación
+  const forgotForm = document.getElementById('forgotForm');
+  if (forgotForm) {
+    forgotForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = forgotForm.email.value.trim();
+      if (!email) return showMessage('Ingresa tu email', 'error');
+      try {
+        await apiCall('/auth/forgot-password', {
+          method: 'POST',
+          body: JSON.stringify({ email })
+        });
+        showMessage('Si el email existe, recibirás instrucciones para restablecer tu contraseña.', 'info');
+      } catch (err) {
+        showMessage('Error al enviar el correo de recuperación', 'error');
+      }
+      forgotForm.reset();
     });
   }
 }
