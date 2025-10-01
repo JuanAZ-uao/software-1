@@ -94,7 +94,7 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
         throw new Error('No hay programas disponibles para asignar al estudiante');
       }
       await connection.execute(
-        'INSERT INTO estudiante (idUsuario, idPrograma, fechaIngreso) VALUES (?, ?, CURDATE())',
+        'INSERT INTO estudiante (idUsuario, idPrograma) VALUES (?, ?)',
         [userId, programas[0].idPrograma]
       );
       console.log('✅ Estudiante insertado en programa ID:', programas[0].idPrograma);
@@ -106,7 +106,7 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
         throw new Error('No hay unidades académicas disponibles para asignar al docente');
       }
       await connection.execute(
-        'INSERT INTO docente (idUsuario, idUnidadAcademica, fechaContratacion) VALUES (?, ?, CURDATE())',
+        'INSERT INTO docente (idUsuario, idUnidadAcademica) VALUES (?, ?)',
         [userId, unidades[0].idUnidadAcademica]
       );
       console.log('✅ Docente insertado en unidad ID:', unidades[0].idUnidadAcademica);
@@ -118,7 +118,7 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
         throw new Error('No hay facultades disponibles para asignar a la secretaría');
       }
       await connection.execute(
-        'INSERT INTO secretariaAcademica (idUsuario, idFacultad, fechaAsignacion) VALUES (?, ?, CURDATE())',
+        'INSERT INTO secretariaAcademica (idUsuario, idFacultad) VALUES (?, ?)',
         [userId, facultades[0].idFacultad]
       );
       console.log('✅ Secretaría insertada en facultad ID:', facultades[0].idFacultad);
