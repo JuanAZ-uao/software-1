@@ -59,23 +59,92 @@ export const validateUserPassword = async (userId, password) => {
  * @returns {object} Usuario creado
  */
 export const createUser = async ({ nombre, apellidos, email, telefono, password, tipo }) => {
-	// 1. Insertar en la tabla usuario
-	const [userResult] = await pool.execute(
-		'INSERT INTO usuario (nombre, apellidos, email, telefono) VALUES (?, ?, ?, ?)',
-		[nombre, apellidos, email, telefono]
-	);
-	const idUsuario = userResult.insertId;
-
-	// 2. Insertar la contraseña (sin hash, solo para ejemplo)
-	await pool.execute(
-		'INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES (?, NOW(), ?, "activa")',
-		[idUsuario, password]
-	);
-
-	// 3. Retornar el usuario creado
-	return { idUsuario, nombre, apellidos, email, telefono, tipo };
+  console.log('🔵 Repository - Creando usuario:', { nombre, apellidos, email, telefono, tipo });
+  
+  const connection = await pool.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    console.log('🔄 Transacción iniciada');
+    
+    // 1. Insertar en la tabla usuario
+    console.log('📝 Insertando en tabla usuario...');
+    const [userResult] = await connection.execute(
+      'INSERT INTO usuario (nombre, apellidos, email, telefono) VALUES (?, ?, ?, ?)',
+      [nombre, apellidos, email, telefono]
+    );
+    
+    const userId = userResult.insertId;
+    console.log('✅ Usuario creado con ID:', userId);
+    
+    // 2. Insertar contraseña
+    console.log('🔑 Insertando contraseña...');
+    await connection.execute(
+      'INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES (?, CURDATE(), ?, "activa")',
+      [userId, password]
+    );
+    console.log('✅ Contraseña insertada');
+    
+    // 3. Insertar en tabla específica según tipo CON RELACIONES CORRECTAS
+    console.log('👤 Insertando tipo de usuario:', tipo);
+    if (tipo === 'estudiante') {
+      // Usar el primer programa disponible
+      const [programas] = await connection.execute('SELECT idPrograma FROM programa LIMIT 1');
+      if (programas.length === 0) {
+        throw new Error('No hay programas disponibles para asignar al estudiante');
+      }
+      await connection.execute(
+        'INSERT INTO estudiante (idUsuario, idPrograma, fechaIngreso) VALUES (?, ?, CURDATE())',
+        [userId, programas[0].idPrograma]
+      );
+      console.log('✅ Estudiante insertado en programa ID:', programas[0].idPrograma);
+      
+    } else if (tipo === 'docente') {
+      // Usar la primera unidad académica disponible
+      const [unidades] = await connection.execute('SELECT idUnidadAcademica FROM unidadAcademica LIMIT 1');
+      if (unidades.length === 0) {
+        throw new Error('No hay unidades académicas disponibles para asignar al docente');
+      }
+      await connection.execute(
+        'INSERT INTO docente (idUsuario, idUnidadAcademica, fechaContratacion) VALUES (?, ?, CURDATE())',
+        [userId, unidades[0].idUnidadAcademica]
+      );
+      console.log('✅ Docente insertado en unidad ID:', unidades[0].idUnidadAcademica);
+      
+    } else if (tipo === 'secretaria') {
+      // Usar la primera facultad disponible
+      const [facultades] = await connection.execute('SELECT idFacultad FROM facultad LIMIT 1');
+      if (facultades.length === 0) {
+        throw new Error('No hay facultades disponibles para asignar a la secretaría');
+      }
+      await connection.execute(
+        'INSERT INTO secretariaAcademica (idUsuario, idFacultad, fechaAsignacion) VALUES (?, ?, CURDATE())',
+        [userId, facultades[0].idFacultad]
+      );
+      console.log('✅ Secretaría insertada en facultad ID:', facultades[0].idFacultad);
+    }
+    
+    await connection.commit();
+    console.log('✅ Transacción completada exitosamente');
+    
+    return {
+      idUsuario: userId,
+      nombre,
+      apellidos,
+      email,
+      telefono,
+      tipo
+    };
+    
+  } catch (error) {
+    console.error('❌ Error en createUser:', error);
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 };
-// ...existing code...
+
 export const updateUserPassword = async (userId, newPassword) => {
     await pool.execute(
         'UPDATE contraseña SET clave = ?, fechaCambio = NOW(), estado = "activa" WHERE idUsuario = ?',

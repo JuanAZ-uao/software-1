@@ -199,11 +199,42 @@ export function renderAuthView() {
             </div>
             <div class="form-group">
               <label>Tipo de Usuario</label>
-              <select name="tipo" required>
+              <select name="tipo" required id="tipoSelect">
                 <option value="">Selecciona...</option>
                 <option value="estudiante">Estudiante</option>
                 <option value="docente">Docente</option>
                 <option value="secretaria">Secretaría Académica</option>
+              </select>
+            </div>
+            <!-- Campos condicionales según el tipo -->
+            <div class="form-group" id="programaGroup" style="display:none">
+              <label>Programa</label>
+              <select name="programa">
+                <option value="1">Ingeniería de Sistemas</option>
+                <option value="2">Ingeniería Civil</option>
+                <option value="3">Matemáticas</option>
+                <option value="4">Física</option>
+                <option value="5">Administración de Empresas</option>
+                <option value="6">Psicología</option>
+              </select>
+            </div>
+            <div class="form-group" id="unidadGroup" style="display:none">
+              <label>Unidad Académica</label>
+              <select name="unidad">
+                <option value="1">Ingeniería de Sistemas</option>
+                <option value="2">Ingeniería Civil</option>
+                <option value="3">Departamento de Matemáticas</option>
+                <option value="4">Departamento de Física</option>
+                <option value="5">Escuela de Administración</option>
+              </select>
+            </div>
+            <div class="form-group" id="facultadGroup" style="display:none">
+              <label>Facultad</label>
+              <select name="facultad">
+                <option value="1">Ingeniería</option>
+                <option value="2">Ciencias</option>
+                <option value="3">Administración</option>
+                <option value="4">Humanidades</option>
               </select>
             </div>
             <button type="submit" class="btn primary">Registrarse</button>
