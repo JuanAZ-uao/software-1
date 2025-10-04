@@ -5,6 +5,9 @@ import { fileURLToPath } from 'url';
 import { apiNotFoundHandler, errorHandler } from './src/core/middlewares/index.js';
 import { usersRouter } from './src/routes/users.routes.js';
 import { authRouter } from './src/routes/auth.routes.js';
+import catalogRoutes from './src/routes/catalog.routes.js';
+import programaRoutes from './src/routes/programa.routes.js';
+import facultadRoutes from './src/routes/facultad.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -74,6 +77,9 @@ export const createApp = () => {
   
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);
+  app.use('/api/catalog', catalogRoutes);
+  app.use('/api/programas', programaRoutes);
+  app.use('/api/facultades', facultadRoutes);
   app.use('/api', apiNotFoundHandler);
 
   // Archivos estáticos y frontend
