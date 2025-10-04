@@ -207,35 +207,26 @@ export function renderAuthView() {
               </select>
             </div>
             <!-- Campos condicionales según el tipo -->
+            <div class="form-group" id="facultadGroup" style="display:none">
+              <label>Facultad</label>
+              <select name="facultad" id="facultadSelect">
+                <option value="">Selecciona...</option>
+              </select>
+              <input type="text" id="facultadInput" style="display:none" placeholder="Escribe el nombre de la facultad">
+            </div>
             <div class="form-group" id="programaGroup" style="display:none">
               <label>Programa</label>
-              <select name="programa">
-                <option value="1">Ingeniería de Sistemas</option>
-                <option value="2">Ingeniería Civil</option>
-                <option value="3">Matemáticas</option>
-                <option value="4">Física</option>
-                <option value="5">Administración de Empresas</option>
-                <option value="6">Psicología</option>
+              <select name="programa" id="programaSelect">
+                <option value="">Selecciona...</option>
               </select>
+              <input type="text" id="programaInput" style="display:none" placeholder="Escribe el nombre del programa">
             </div>
             <div class="form-group" id="unidadGroup" style="display:none">
               <label>Unidad Académica</label>
-              <select name="unidad">
-                <option value="1">Ingeniería de Sistemas</option>
-                <option value="2">Ingeniería Civil</option>
-                <option value="3">Departamento de Matemáticas</option>
-                <option value="4">Departamento de Física</option>
-                <option value="5">Escuela de Administración</option>
+              <select name="unidad" id="unidadSelect">
+               
               </select>
-            </div>
-            <div class="form-group" id="facultadGroup" style="display:none">
-              <label>Facultad</label>
-              <select name="facultad">
-                <option value="1">Ingeniería</option>
-                <option value="2">Ciencias</option>
-                <option value="3">Administración</option>
-                <option value="4">Humanidades</option>
-              </select>
+              <input type="text" id="unidadInput" style="display:none" placeholder="Escribe el nombre de la unidad">
             </div>
             <button type="submit" class="btn primary">Registrarse</button>
           </form>
@@ -299,7 +290,9 @@ export function bindAuthEvents() {
         email: formData.get('email').trim(),
         telefono: formData.get('telefono').trim(),
         password: formData.get('password').trim(),
-        tipo: formData.get('tipo')
+        tipo: formData.get('tipo'),
+        programa: formData.get('programaSelect') === '__manual__' ? formData.get('programaManual') : formData.get('programa'),
+        facultad: formData.get('facultadSelect') === '__manual__' ? formData.get('facultadManual') : formData.get('facultad'),
       };
       if (!userData.nombre || !userData.apellidos || !userData.email || !userData.telefono || !userData.password || !userData.tipo) {
         showMessage('Por favor completa todos los campos', 'error');
@@ -358,6 +351,24 @@ export function bindAuthEvents() {
       forgotForm.reset();
     });
   }
+
+  // Cargar programas y facultades en los selects
+  const tipoSelect = document.getElementById('tipoSelect');
+  if (tipoSelect) {
+    tipoSelect.addEventListener('change', (e) => {
+      handleTipoChange(e.target.value);
+    });
+  }
+
+  // Cargar catálogo de programas/facultades al iniciar
+  if (isAuthenticated()) {
+    const user = getCurrentUser();
+    if (user.tipo === 'estudiante') {
+      loadCatalog('programas', 'programaSelect', 'programaInput');
+    } else if (user.tipo === 'docente') {
+      loadCatalog('facultades', 'facultadSelect', 'facultadInput');
+    }
+  }
 }
 
 /**
@@ -368,6 +379,76 @@ export function bindAuthEvents() {
 function validateEmail(email) {
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return re.test(email);
+}
+
+/**
+ * Carga un catálogo de la API a un select
+ * @param {string} endpoint El endpoint de la API
+ * @param {string} selectId El ID del select a llenar
+ * @param {string} inputId El ID del input de texto (opcional)
+ */
+async function loadCatalog(endpoint, selectId, inputId) {
+  const select = document.getElementById(selectId);
+  const input = document.getElementById(inputId);
+  if (!select) return;
+  select.innerHTML = '<option value="">Selecciona...</option>';
+  try {
+    const res = await fetch(`http://localhost:3000/api/catalog/${endpoint}`);
+    const items = await res.json();
+    items.forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item.idPrograma || item.idFacultad || item.idUnidad;
+      opt.textContent = item.nombre;
+      select.appendChild(opt);
+    });
+    // Opción para escribir manualmente
+    const manualOpt = document.createElement('option');
+    manualOpt.value = '__manual__';
+    manualOpt.textContent = 'Otro (escribir manualmente)';
+    select.appendChild(manualOpt);
+
+    select.addEventListener('change', () => {
+      if (select.value === '__manual__') {
+        input.style.display = '';
+      } else {
+        input.style.display = 'none';
+      }
+    });
+  } catch (e) {
+    select.innerHTML = '<option value="">Error al cargar</option>';
+  }
+}
+
+// Llama esto cuando el usuario selecciona tipo
+function handleTipoChange(tipo) {
+  // Intercambia los grupos y textos según el tipo seleccionado
+  document.getElementById('programaGroup').style.display = tipo === 'estudiante' ? '' : 'none';
+
+  // Docente: mostrar unidad académica
+  if (tipo === 'docente') {
+    document.getElementById('unidadGroup').style.display = '';
+    document.getElementById('facultadGroup').style.display = 'none';
+    // Cambia el label
+    document.querySelector('#unidadGroup label').textContent = 'Unidad Académica';
+    loadCatalog('unidades', 'unidadSelect', 'unidadInput');
+  }
+  // Secretaria: mostrar facultad
+  else if (tipo === 'secretaria') {
+    document.getElementById('facultadGroup').style.display = '';
+    document.getElementById('unidadGroup').style.display = 'none';
+    // Cambia el label
+    document.querySelector('#facultadGroup label').textContent = 'Facultad';
+    loadCatalog('facultades', 'facultadSelect', 'facultadInput');
+  }
+  // Otros casos
+  else {
+    document.getElementById('unidadGroup').style.display = 'none';
+    document.getElementById('facultadGroup').style.display = 'none';
+  }
+
+  if (tipo === 'estudiante') {
+    loadCatalog('programas', 'programaSelect', 'programaInput');
+  }
 }
 
 // Solo redirigir al dashboard si ya está autenticado y la ruta es exactamente login
