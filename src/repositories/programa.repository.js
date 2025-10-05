@@ -1,11 +1,17 @@
 // Si usas un array en memoria:
-let programas = [
-  { id: 1, nombre: 'Ingeniería de Sistemas' },
-  { id: 2, nombre: 'Administración' },
-  { id: 3, nombre: 'Derecho' }
-];
+import pool from '../db/pool.js';
 
-// Función para obtener todos los programas
-export function getAllProgramas() {
-  return programas;
-}
+export const getAllProgramas = async () => {
+  const [rows] = await pool.execute('SELECT idPrograma AS id, nombre, idFacultad FROM programa ORDER BY idPrograma');
+  return rows;
+};
+
+export const getProgramasByFacultad = async (idFacultad) => {
+  const [rows] = await pool.execute('SELECT idPrograma AS id, nombre, idFacultad FROM programa WHERE idFacultad = ? ORDER BY idPrograma', [idFacultad]);
+  return rows;
+};
+
+export const getProgramaById = async (id) => {
+  const [rows] = await pool.execute('SELECT idPrograma AS id, nombre, idFacultad FROM programa WHERE idPrograma = ?', [id]);
+  return rows[0] || null;
+};
