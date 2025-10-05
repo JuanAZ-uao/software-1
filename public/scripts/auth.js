@@ -421,33 +421,40 @@ async function loadCatalog(endpoint, selectId, inputId) {
 
 // Llama esto cuando el usuario selecciona tipo
 function handleTipoChange(tipo) {
-  // Intercambia los grupos y textos según el tipo seleccionado
-  document.getElementById('programaGroup').style.display = tipo === 'estudiante' ? '' : 'none';
+  // Mostrar/ocultar grupos
+  const programaGroup = document.getElementById('programaGroup');
+  const facultadGroup = document.getElementById('facultadGroup');
+  const unidadGroup = document.getElementById('unidadGroup');
+  const programaSelect = document.getElementById('programaSelect');
+  const facultadSelect = document.getElementById('facultadSelect');
+  const unidadSelect = document.getElementById('unidadSelect');
 
-  // Docente: mostrar unidad académica
+  programaGroup.style.display = tipo === 'estudiante' ? '' : 'none';
+  unidadGroup.style.display = tipo === 'docente' ? '' : (tipo === 'secretaria' ? 'none' : 'none');
+  facultadGroup.style.display = tipo === 'secretaria' ? '' : (tipo === 'docente' ? 'none' : 'none');
+
+  // Intercambia los labels
   if (tipo === 'docente') {
-    document.getElementById('unidadGroup').style.display = '';
-    document.getElementById('facultadGroup').style.display = 'none';
-    // Cambia el label
     document.querySelector('#unidadGroup label').textContent = 'Unidad Académica';
     loadCatalog('unidades', 'unidadSelect', 'unidadInput');
-  }
-  // Secretaria: mostrar facultad
-  else if (tipo === 'secretaria') {
-    document.getElementById('facultadGroup').style.display = '';
-    document.getElementById('unidadGroup').style.display = 'none';
-    // Cambia el label
+    unidadSelect.required = true;
+    facultadSelect.required = false;
+    programaSelect.required = false;
+  } else if (tipo === 'secretaria') {
     document.querySelector('#facultadGroup label').textContent = 'Facultad';
     loadCatalog('facultades', 'facultadSelect', 'facultadInput');
-  }
-  // Otros casos
-  else {
-    document.getElementById('unidadGroup').style.display = 'none';
-    document.getElementById('facultadGroup').style.display = 'none';
-  }
-
-  if (tipo === 'estudiante') {
+    facultadSelect.required = true;
+    unidadSelect.required = false;
+    programaSelect.required = false;
+  } else if (tipo === 'estudiante') {
     loadCatalog('programas', 'programaSelect', 'programaInput');
+    programaSelect.required = true;
+    facultadSelect.required = false;
+    unidadSelect.required = false;
+  } else {
+    programaSelect.required = false;
+    facultadSelect.required = false;
+    unidadSelect.required = false;
   }
 }
 

@@ -19,11 +19,10 @@ const facultades = [
 ];
 
 const unidades = [
-  { idUnidad: 1, nombre: 'Ingeniería de Sistemas' },
-  { idUnidad: 2, nombre: 'Ingeniería Civil' },
-  { idUnidad: 3, nombre: 'Departamento de Matemáticas' },
-  { idUnidad: 4, nombre: 'Departamento de Física' },
-  { idUnidad: 5, nombre: 'Escuela de Administración' }
+  { idUnidad: 1, nombre: 'Departamento de Ingeniería' },
+  { idUnidad: 2, nombre: 'Departamento de Ciencias Exactas' },
+  { idUnidad: 3, nombre: 'Departamento de Negocios' },
+  { idUnidad: 4, nombre: 'Departamento de Comunicación Social' }
 ];
 
 router.get('/programas', (req, res) => {
