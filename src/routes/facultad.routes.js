@@ -1,15 +1,11 @@
 import { Router } from 'express';
+import { asyncHandler } from '../core/middlewares/async-handler.js';
+import { getFacultades, getFacultadById, postFacultad } from '../controllers/facultad.controller.js';
 
 const router = Router();
 
-const facultades = [
-  { id: 1, nombre: 'Facultad de Ingeniería' },
-  { id: 2, nombre: 'Facultad de Ciencias' },
-  { id: 3, nombre: 'Facultad de Derecho' }
-];
-
-router.get('/', (req, res) => {
-  res.json(facultades);
-});
+router.get('/', asyncHandler(getFacultades));
+router.get('/:id', asyncHandler(getFacultadById));
+router.post('/', asyncHandler(postFacultad));
 
 export default router;
