@@ -1,28 +1,72 @@
-/**
- * dashboard.js - Componente de Dashboard principal
- *
- * Este componente renderiza la vista principal del panel de usuario,
- * mostrando estadísticas, accesos rápidos y eventos recientes.
- * Utiliza el estado global para obtener datos de eventos, organizaciones y usuarios.
- */
-
+// src/components/dashboard.js
 import { getState } from '../utils/state.js';
 import { formatDate } from '../utils/helpers.js';
 
 /**
+ * Convierte un evento a Date seguro usando múltiples nombres posibles de campo.
+ * Soporta: date | fecha | fechaEvento (YYYY-MM-DD) y time | hora (HH:mm)
+ * Devuelve null si no puede parsear.
+ */
+function toDateTime(evt) {
+  try {
+    if (!evt) return null;
+    const dateRaw = evt.date ?? evt.fecha ?? evt.fechaEvento ?? '';
+    const timeRaw = evt.time ?? evt.hora ?? '';
+    const dateStr = typeof dateRaw === 'string' ? dateRaw.trim() : (dateRaw instanceof Date ? dateRaw.toISOString().slice(0,10) : '');
+    const timeStr = typeof timeRaw === 'string' ? timeRaw.trim() : '';
+
+    if (!dateStr) return null;
+    // Normalizar hora; si no hay hora tomamos inicio del día
+    const iso = timeStr ? `${dateStr}T${timeStr}` : `${dateStr}T00:00:00`;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Normaliza campos para render: title/nombre, category/tipo, status/estado, organizerId/idUsuario.
+ */
+function normalizeEventForView(e) {
+  return {
+    id: e.id ?? e.idEvento ?? null,
+    title: e.title ?? e.nombre ?? e.name ?? '',
+    category: e.category ?? e.tipo ?? '',
+    date: e.date ?? e.fecha ?? '',
+    time: e.time ?? e.hora ?? '',
+    status: e.status ?? e.estado ?? '',
+    organizerId: e.organizerId ?? e.idUsuario ?? e.userId ?? null,
+    ubicacion: e.ubicacion ?? e.location ?? ''
+  };
+}
+
+/**
  * Renderiza el dashboard principal con KPIs, accesos rápidos y lista de eventos recientes.
- * @returns {string} HTML del dashboard
  */
 export function renderDashboard(){
-  const { events, organizations, users } = getState();
+  const { events = [], organizations = [], users = [] } = getState() || {};
   // ID del usuario autenticado
   const meId = JSON.parse(localStorage.getItem('uc_auth')||'{}')?.id;
-  // Eventos organizados por el usuario actual
-  const myEvents = events.filter(e => e.organizerId === meId);
-  // Últimos 6 eventos recientes
-  const recent = [...events].sort((a,b)=> (b.date+a.time).localeCompare(a.date+a.time)).slice(0,6);
 
-  // Tarjeta de estadística
+  const normalized = Array.isArray(events) ? events.map(normalizeEventForView) : [];
+
+  // Eventos organizados por el usuario actual
+  const myEvents = normalized.filter(e => String(e.organizerId) === String(meId));
+
+  // Ordenar por fecha+hora descendente de forma segura
+  const recent = normalized
+    .slice()
+    .sort((a, b) => {
+      const da = toDateTime(a);
+      const db = toDateTime(b);
+      if (da === null && db === null) return 0;
+      if (da === null) return 1;
+      if (db === null) return -1;
+      return db.getTime() - da.getTime();
+    })
+    .slice(0, 6);
+
   const statCard = (label, value, action) => `
     <div class="card stat">
       <div class="card-body">
@@ -32,7 +76,6 @@ export function renderDashboard(){
       </div>
     </div>`;
 
-  // Accesos rápidos
   const quicks = `
     <div class="flex gap-8 mt-16">
       <a href="#events" class="btn small">➕ Nuevo evento</a>
@@ -40,30 +83,29 @@ export function renderDashboard(){
       <a href="#calendar" class="btn small">📅 Ver calendario</a>
     </div>`;
 
-  // Lista de eventos recientes
-  const recentList = recent.map(e => `
+  const recentList = recent.length ? recent.map(e => `
     <div class="list-item">
       <div>
-        <strong>${e.title}</strong>
-        <div class="muted">${e.category} • ${formatDate(e.date)} • ${e.time}</div>
+        <strong>${escapeHtml(e.title)}</strong>
+        <div class="muted">${escapeHtml(e.category)} • ${formatDate(e.date)} • ${escapeHtml(e.time)}</div>
       </div>
-      <span class="badge">${e.status}</span>
+      <span class="badge">${escapeHtml(e.status)}</span>
     </div>
-  `).join('');
+  `).join('') : '<div class="muted">Sin eventos</div>';
 
   return `
     <section class="grid">
-      <div class="col-3 col-12">${statCard('Total eventos', events.length, '')}</div>
+      <div class="col-3 col-12">${statCard('Total eventos', normalized.length, '')}</div>
       <div class="col-3 col-12">${statCard('Mis eventos', myEvents.length, '')}</div>
-      <div class="col-3 col-12">${statCard('Organizaciones', organizations.length, '')}</div>
-      <div class="col-3 col-12">${statCard('Usuarios', users.length, '')}</div>
+      <div class="col-3 col-12">${statCard('Organizaciones', organizations?.length || 0, '')}</div>
+      <div class="col-3 col-12">${statCard('Usuarios', users?.length || 0, '')}</div>
     </section>
 
     <section class="grid mt-24">
       <div class="card col-8 col-12">
         <div class="card-head"><strong>Eventos recientes</strong></div>
         <div class="card-body">
-          <div class="list">${recentList || '<div class="muted">Sin eventos</div>'}</div>
+          <div class="list">${recentList}</div>
           ${quicks}
         </div>
       </div>
@@ -74,3 +116,5 @@ export function renderDashboard(){
     </section>
   `;
 }
+
+function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
