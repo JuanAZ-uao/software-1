@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { asyncHandler } from '../core/middlewares/async-handler.js';
 import {
-	createUser,
-	deleteUser,
-	getUser,
-	listUsers,
-	updateUser
+    createUser,
+    deleteUser,
+    getUser,
+    listUsers,
+    updateUser
 } from '../controllers/user.controller.js';
 import { validateCreateUser, validateUpdateUser } from '../repositories/user.validation.js';
 import { loginUser, getCurrentUser } from '../controllers/auth.controller.js';
@@ -20,4 +20,4 @@ router.delete('/:id', asyncHandler(deleteUser));
 router.post('/login', asyncHandler(loginUser));
 router.get('/me', asyncHandler(getCurrentUser));
 
-export const usersRouter = router;
+export const usuariosRouter = router;

@@ -100,3 +100,15 @@ export const resetPassword = async (req, res) => {
         res.status(400).json({ success: false, message: 'Token inválido o expirado' });
     }
 };
+
+/**
+ * Controlador para cerrar sesión de usuario
+ */
+export const logoutUser = async (req, res) => {
+    // En un sistema con JWT, aquí podrías invalidar el token
+    // En un sistema con sesiones, destruirías la sesión
+    res.json({
+        success: true,
+        message: 'Sesión cerrada exitosamente'
+    });
+};
