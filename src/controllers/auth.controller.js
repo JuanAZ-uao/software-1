@@ -55,6 +55,9 @@ export const forgotPassword = async (req, res) => {
  */
 export const resetPassword = async (req, res) => {
     const { email, token, password } = req.body;
+    if (!email) {
+        return res.status(400).json({ success: false, message: 'Email es requerido' });
+    }
     const user = await findUserByEmail(email);
     if (!user) {
         return res.status(400).json({ success: false, message: 'Usuario no encontrado' });
