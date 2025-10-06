@@ -9,3 +9,8 @@ export const createOrganizacion = async (req, res) => {
   const org = await organizacionRepo.create(req.body);
   res.status(201).json({ data: org });
 };
+
+export const updateOrganizacion = async (req, res) => {
+  const org = await organizacionRepo.update(req.params.id, req.body);
+  res.json({ data: org });
+};

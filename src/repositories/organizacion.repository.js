@@ -13,3 +13,13 @@ export const create = async (payload) => {
   );
   return { idOrganizacion: result.insertId, ...payload };
 };
+
+export const update = async (id, payload) => {
+  const { nombre, representanteLegal, ubicacion, direccion, ciudad, sectorEconomico, actividadPrincipal, telefono } = payload;
+  await pool.execute(
+    'UPDATE organizacion SET nombre=?, representanteLegal=?, ubicacion=?, direccion=?, ciudad=?, sectorEconomico=?, actividadPrincipal=?, telefono=? WHERE idOrganizacion=?',
+    [nombre, representanteLegal, ubicacion, direccion, ciudad, sectorEconomico, actividadPrincipal, telefono, id]
+  );
+  const [rows] = await pool.execute('SELECT * FROM organizacion WHERE idOrganizacion=?', [id]);
+  return rows[0];
+};
