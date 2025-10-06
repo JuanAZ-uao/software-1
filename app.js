@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { apiNotFoundHandler, errorHandler } from './src/core/middlewares/index.js';
-import { usersRouter } from './src/routes/users.routes.js';
+import { usuariosRouter } from './src/routes/usuarios.routes.js';
 import { authRouter } from './src/routes/auth.routes.js';
 import catalogRoutes from './src/routes/catalog.routes.js';
 import programaRoutes from './src/routes/programa.routes.js';
@@ -76,7 +76,7 @@ export const createApp = () => {
   });
   
   app.use('/api/auth', authRouter);
-  app.use('/api/users', usersRouter);
+  app.use('/api/users', usuariosRouter);
   app.use('/api/catalog', catalogRoutes);
   app.use('/api/programas', programaRoutes);
   app.use('/api/facultades', facultadRoutes);
