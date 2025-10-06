@@ -76,7 +76,7 @@ export const createApp = () => {
   });
   
   app.use('/api/auth', authRouter);
-  app.use('/api/users', usersRouter);
+  app.use('/api/users', usuariosRouter);
   app.use('/api/catalog', catalogRoutes);
   app.use('/api/programas', programaRoutes);
   app.use('/api/facultades', facultadRoutes);
