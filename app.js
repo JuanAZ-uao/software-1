@@ -8,6 +8,7 @@ import { authRouter } from './src/routes/auth.routes.js';
 import catalogRoutes from './src/routes/catalog.routes.js';
 import programaRoutes from './src/routes/programa.routes.js';
 import facultadRoutes from './src/routes/facultad.routes.js';
+import organizacionRoutes from './src/routes/organizacion.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,6 +81,7 @@ export const createApp = () => {
   app.use('/api/catalog', catalogRoutes);
   app.use('/api/programas', programaRoutes);
   app.use('/api/facultades', facultadRoutes);
+  app.use('/api/organizaciones', organizacionRoutes);
 
 // Archivos estáticos y frontend
 app.use(express.static(path.join(__dirname, 'public')));
