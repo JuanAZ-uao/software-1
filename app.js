@@ -76,25 +76,27 @@ export const createApp = () => {
   });
   
   app.use('/api/auth', authRouter);
-  app.use('/api/users', usuariosRouter);
+  app.use('/api/usuarios', usuariosRouter);
   app.use('/api/catalog', catalogRoutes);
   app.use('/api/programas', programaRoutes);
   app.use('/api/facultades', facultadRoutes);
-  app.use('/api', apiNotFoundHandler);
 
-  // Archivos estáticos y frontend
-  app.use(express.static(path.join(__dirname, 'public')));
+// Archivos estáticos y frontend
+app.use(express.static(path.join(__dirname, 'public')));
 
-  app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      res.sendFile(path.join(__dirname, 'public', 'index.html'));
-    } else {
-      res.status(404).send('404 Not Found');
-    }
-  });
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  } else {
+    next();
+  }
+});
 
-  // Middlewares de error
-  app.use(errorHandler);
+// Este middleware SOLO para rutas no encontradas
+app.use('/api', apiNotFoundHandler);
+
+// Middlewares de error SIEMPRE al final
+app.use(errorHandler);
 
   return app;
 };
