@@ -2,7 +2,7 @@
  * profile.js - Componente de perfil de usuario
  *
  * Este componente renderiza la vista de perfil, mostrando información del usuario
- * y permitiendo editar bio e intereses. Utiliza el usuario autenticado actual.
+ * y permitiendo editar datos básicos y cambiar contraseña. Utiliza el usuario autenticado actual.
  */
 
 import { getCurrentUser } from '../auth.js';
@@ -18,23 +18,22 @@ export function renderProfile(){
     <div class="grid">
       <div class="card col-4 col-12">
         <div class="card-body">
-          <img class="avatar" style="width:72px;height:72px" src="${u.avatar}" alt="avatar" />
-          <h2 class="mt-16" style="margin:0">${u.name} ${u.lastname||''}</h2>
-          <div class="muted">${u.role} — ${u.department || ''}</div>
+          <img class="avatar" style="width:72px;height:72px" src="${u.avatar || 'https://images.unsplash.com/photo-1494790108755-2616b612b372?w=150'}" alt="avatar" />
+          <h2 class="mt-16" style="margin:0">${u.name || u.nombre || ''} ${u.lastname || u.apellidos || ''}</h2>
+          <div class="muted">${u.role || u.tipo || ''} — ${u.department || ''}</div>
           <div class="muted">${u.email||''}</div>
-          <div class="muted">${u.phone||''}</div>
+          <div class="muted">${u.phone || u.telefono ||''}</div>
         </div>
       </div>
       <div class="card col-8 col-12">
         <div class="card-head"><strong>Editar perfil</strong></div>
         <div class="card-body">
           <form id="profileForm" class="flex-col gap-12">
-            <div><label class="label">Nombre</label><input class="input" name="name" value="${u.name||''}"></div>
-            <div><label class="label">Apellido</label><input class="input" name="lastname" value="${u.lastname||''}"></div>
-            <div><label class="label">Correo electrónico</label><input class="input" name="email" type="email" value="${u.email||''}"></div>
-            <div><label class="label">Teléfono</label><input class="input" name="phone" type="tel" value="${u.phone||''}"></div>
-            <!-- Campos de bio e intereses eliminados -->
-            <button class="btn primary">Guardar</button>
+            <div><label class="label">Nombre</label><input class="input" name="name" value="${u.name || u.nombre || ''}" required></div>
+            <div><label class="label">Apellido</label><input class="input" name="lastname" value="${u.lastname || u.apellidos || ''}" required></div>
+            <div><label class="label">Correo electrónico</label><input class="input" name="email" type="email" value="${u.email||''}" required></div>
+            <div><label class="label">Teléfono</label><input class="input" name="phone" type="tel" value="${u.phone || u.telefono || ''}" required pattern="[0-9]{10}" title="Debe tener 10 dígitos"></div>
+            <button class="btn primary" type="submit">Guardar</button>
           </form>
         </div>
         <hr style="margin:32px 0;">
@@ -42,9 +41,9 @@ export function renderProfile(){
         <div class="card-body">
           <form id="passwordForm" class="flex-col gap-12">
             <div><label class="label">Contraseña actual</label><input class="input" name="currentPassword" type="password" required></div>
-            <div><label class="label">Nueva contraseña</label><input class="input" name="newPassword" type="password" required></div>
-            <div><label class="label">Confirmar nueva contraseña</label><input class="input" name="confirmPassword" type="password" required></div>
-            <button class="btn primary">Cambiar contraseña</button>
+            <div><label class="label">Nueva contraseña</label><input class="input" name="newPassword" type="password" required minlength="6"></div>
+            <div><label class="label">Confirmar nueva contraseña</label><input class="input" name="confirmPassword" type="password" required minlength="6"></div>
+            <button class="btn primary" type="submit">Cambiar contraseña</button>
           </form>
         </div>
       </div>
@@ -73,13 +72,34 @@ async function handleProfileUpdate(form) {
   const fd = new FormData(form);
   const auth = JSON.parse(localStorage.getItem('uc_auth'));
   
+  // Usar idUsuario si existe, sino usar id, sino usar 1 por defecto (usuario simulado)
+  const userId = auth.idUsuario || auth.id || 1;
+  
   const profileData = {
-    userId: auth.id, // ID del usuario actual
-    nombre: String(fd.get('name') || ''),
-    apellidos: String(fd.get('lastname') || ''),
-    email: String(fd.get('email') || ''),
-    telefono: String(fd.get('phone') || '')
+    userId: userId,
+    nombre: String(fd.get('name') || '').trim(),
+    apellidos: String(fd.get('lastname') || '').trim(),
+    email: String(fd.get('email') || '').trim(),
+    telefono: String(fd.get('phone') || '').trim()
   };
+
+  // Validaciones del lado del cliente
+  if (!profileData.nombre || !profileData.apellidos || !profileData.email || !profileData.telefono) {
+    toast('Todos los campos son requeridos', 'error');
+    return;
+  }
+
+  if (!/^\d{10}$/.test(profileData.telefono)) {
+    toast('El teléfono debe tener exactamente 10 dígitos', 'error');
+    return;
+  }
+
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(profileData.email)) {
+    toast('Por favor ingresa un email válido', 'error');
+    return;
+  }
+
+  console.log('🔄 Enviando actualización de perfil:', profileData);
 
   try {
     const response = await fetch('http://localhost:3000/api/auth/profile', {
@@ -95,9 +115,14 @@ async function handleProfileUpdate(form) {
     if (response.ok && result.success) {
       // Actualizar datos en localStorage con los datos del servidor
       auth.name = result.user.nombre;
+      auth.nombre = result.user.nombre;
       auth.lastname = result.user.apellidos;
+      auth.apellidos = result.user.apellidos;
       auth.email = result.user.email;
       auth.phone = result.user.telefono;
+      auth.telefono = result.user.telefono;
+      auth.idUsuario = result.user.idUsuario;
+      
       localStorage.setItem('uc_auth', JSON.stringify(auth));
       
       toast('Perfil actualizado exitosamente', 'success');
@@ -105,7 +130,7 @@ async function handleProfileUpdate(form) {
       // Recargar la página para mostrar los datos actualizados
       setTimeout(() => {
         window.location.reload();
-      }, 1000);
+      }, 1500);
     } else {
       toast(result.message || 'Error al actualizar el perfil', 'error');
     }
@@ -122,12 +147,12 @@ async function handlePasswordChange(form) {
   const fd = new FormData(form);
   const auth = JSON.parse(localStorage.getItem('uc_auth'));
   
-  const currentPassword = String(fd.get('currentPassword') || '');
-  const newPassword = String(fd.get('newPassword') || '');
-  const confirmPassword = String(fd.get('confirmPassword') || '');
+  const currentPassword = String(fd.get('currentPassword') || '').trim();
+  const newPassword = String(fd.get('newPassword') || '').trim();
+  const confirmPassword = String(fd.get('confirmPassword') || '').trim();
 
   // Validaciones del lado del cliente
-  if (!currentPassword || !newPassword) {
+  if (!currentPassword || !newPassword || !confirmPassword) {
     toast('Todos los campos son requeridos', 'error');
     return;
   }
@@ -142,12 +167,22 @@ async function handlePasswordChange(form) {
     return;
   }
 
+  if (currentPassword === newPassword) {
+    toast('La nueva contraseña debe ser diferente a la actual', 'error');
+    return;
+  }
+
+  // Usar idUsuario si existe, sino usar id, sino usar 1 por defecto (usuario simulado)
+  const userId = auth.idUsuario || auth.id || 1;
+
   const passwordData = {
-    userId: auth.id,
+    userId: userId,
     currentPassword,
     newPassword,
     confirmPassword
   };
+
+  console.log('🔄 Enviando cambio de contraseña para usuario:', userId);
 
   try {
     const response = await fetch('http://localhost:3000/api/auth/password', {

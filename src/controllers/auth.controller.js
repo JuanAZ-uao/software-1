@@ -63,11 +63,22 @@ export const resetPassword = async (req, res) => {
     if (!record || record.token !== token || Date.now() > record.expires) {
         return res.status(400).json({ success: false, message: 'Token inválido o expirado' });
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await updateUserPassword(user.idUsuario, password);
+    await updateUserPassword(user.idUsuario, password); // Sin hash por consistencia
     // Elimina el token después de usarlo
     delete passwordResetTokens[email];
     res.json({ success: true, message: 'Contraseña actualizada correctamente' });
+};
+
+/**
+ * Endpoint para validar token de recuperación antes de permitir cambio de contraseña
+ */
+export const validateToken = async (req, res) => {
+    const { email, token } = req.body;
+    const record = passwordResetTokens[email];
+    if (!record || record.token !== token || Date.now() > record.expires) {
+        return res.status(400).json({ success: false, message: 'Token inválido o expirado' });
+    }
+    res.json({ success: true });
 };
 
 /**
@@ -94,11 +105,109 @@ export const registerUser = async (req, res) => {
         res.status(400).json({ success: false, message: err.message });
     }
 };
-export const validateToken = async (req, res) => {
-  const { email, token } = req.body;
-  const record = passwordResetTokens[email];
-  if (!record || record.token !== token || Date.now() > record.expires) {
-    return res.status(400).json({ success: false, message: 'Token inválido o expirado' });
-  }
-  res.json({ success: true });
+
+/**
+ * Obtiene el usuario actual (simulado por ahora)
+ */
+export const getCurrentUser = async (req, res) => {
+    try {
+        // Por ahora devolvemos un usuario simulado
+        // En una implementación real, obtendrías el userId del token JWT
+        const mockUser = {
+            id: '1',
+            idUsuario: 1, // Agregado para compatibilidad
+            nombre: 'Usuario',
+            apellidos: 'De Prueba',
+            email: 'usuario@universidad.edu',
+            telefono: '1234567890',
+            tipo: 'estudiante'
+        };
+        
+        res.json({
+            success: true,
+            user: mockUser
+        });
+    } catch (error) {
+        console.error('Error en getCurrentUser:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al obtener información del usuario'
+        });
+    }
+};
+
+/**
+ * Actualiza el perfil del usuario
+ */
+export const updateProfile = async (req, res) => {
+    try {
+        const { userId, nombre, apellidos, email, telefono } = req.body;
+        
+        console.log('🔄 Recibiendo actualización de perfil:', { userId, nombre, apellidos, email, telefono });
+        
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'ID de usuario es requerido'
+            });
+        }
+
+        const updatedUser = await updateProfileService(userId, {
+            nombre,
+            apellidos,
+            email,
+            telefono
+        });
+        
+        res.json({
+            success: true,
+            message: 'Perfil actualizado exitosamente',
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error('Error en updateProfile:', error);
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+/**
+ * Cambia la contraseña del usuario
+ */
+export const changePassword = async (req, res) => {
+    try {
+        const { userId, currentPassword, newPassword, confirmPassword } = req.body;
+        
+        console.log('🔄 Recibiendo cambio de contraseña para usuario:', userId);
+        
+        if (!userId || !currentPassword || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'Todos los campos son requeridos'
+            });
+        }
+
+        // Validar confirmación de contraseña si se proporciona
+        if (confirmPassword && newPassword !== confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'Las contraseñas no coinciden'
+            });
+        }
+
+        await changePasswordService(userId, currentPassword, newPassword);
+        
+        res.json({
+            success: true,
+            message: 'Contraseña actualizada exitosamente'
+        });
+    } catch (error) {
+        console.error('Error en changePassword:', error);
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
 };

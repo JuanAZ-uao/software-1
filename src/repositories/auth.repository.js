@@ -148,7 +148,7 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
 /**
  * Actualiza la contraseña de un usuario (usada para recuperación de contraseña)
  * @param {number} userId
- * @param {string} newPassword (ya hasheada)
+ * @param {string} newPassword (sin hashear - se guarda tal como viene)
  */
 export const updateUserPassword = async (userId, newPassword) => {
     await pool.execute(
@@ -159,6 +159,7 @@ export const updateUserPassword = async (userId, newPassword) => {
 
 /**
  * Actualiza el perfil de un usuario (nombre, apellidos, email, telefono)
+ * Permite actualizar campos individuales - solo actualiza los campos que no son undefined/null
  */
 export const updateUserProfile = async (userId, { nombre, apellidos, email, telefono }) => {
   const connection = await pool.getConnection();
@@ -166,17 +167,55 @@ export const updateUserProfile = async (userId, { nombre, apellidos, email, tele
   try {
     console.log('🔄 Actualizando perfil del usuario:', userId);
     
+    // Preparar campos a actualizar (solo los que no son undefined/null)
+    const fields = [];
+    const values = [];
+    
+    if (nombre !== undefined && nombre !== null) {
+      fields.push('nombre = ?');
+      values.push(nombre);
+    }
+    if (apellidos !== undefined && apellidos !== null) {
+      fields.push('apellidos = ?');
+      values.push(apellidos);
+    }
+    if (email !== undefined && email !== null) {
+      fields.push('email = ?');
+      values.push(email);
+    }
+    if (telefono !== undefined && telefono !== null) {
+      fields.push('telefono = ?');
+      values.push(telefono);
+    }
+    
+    if (fields.length === 0) {
+      throw new Error('No hay campos para actualizar');
+    }
+    
+    values.push(userId); // Para el WHERE
+    
     // Actualizar datos del usuario
     await connection.execute(
-      'UPDATE usuario SET nombre = ?, apellidos = ?, email = ?, telefono = ? WHERE idUsuario = ?',
-      [nombre, apellidos, email, telefono, userId]
+      `UPDATE usuario SET ${fields.join(', ')} WHERE idUsuario = ?`,
+      values
     );
     
     console.log('✅ Perfil actualizado exitosamente');
     
-    // Retornar los datos actualizados
+    // Retornar los datos actualizados con el tipo de usuario
     const [users] = await connection.execute(
-      'SELECT idUsuario, nombre, apellidos, email, telefono FROM usuario WHERE idUsuario = ?',
+      `SELECT u.idUsuario, u.nombre, u.apellidos, u.email, u.telefono,
+              CASE 
+                WHEN e.idUsuario IS NOT NULL THEN 'estudiante'
+                WHEN d.idUsuario IS NOT NULL THEN 'docente' 
+                WHEN s.idUsuario IS NOT NULL THEN 'secretaria'
+                ELSE 'usuario'
+              END as tipo
+       FROM usuario u 
+       LEFT JOIN estudiante e ON u.idUsuario = e.idUsuario
+       LEFT JOIN docente d ON u.idUsuario = d.idUsuario  
+       LEFT JOIN secretariaAcademica s ON u.idUsuario = s.idUsuario
+       WHERE u.idUsuario = ?`,
       [userId]
     );
     
@@ -209,6 +248,7 @@ export const changeUserPassword = async (userId, currentPassword, newPassword) =
       throw new Error('Usuario no encontrado o sin contraseña activa');
     }
     
+    // Por ahora comparación directa (sin hash) - consistente con validateUserPassword
     if (passwords[0].clave !== currentPassword) {
       throw new Error('La contraseña actual es incorrecta');
     }
