@@ -13,14 +13,14 @@
 
 import { getPool } from '../db/pool.js';
 
-const USER_COLUMNS = 'id, name, email, created_at AS createdAt, updated_at AS updatedAt';
+const USER_COLUMNS = 'idUsuario AS id, nombre AS name, email, created_at AS createdAt, updated_at AS updatedAt';
 
 /**
  * Retorna todos los usuarios ordenados por ID descendente
  */
 export const findAll = async () => {
     const pool = await getPool();
-    const [rows] = await pool.query(`SELECT ${USER_COLUMNS} FROM users ORDER BY id DESC`);
+    const [rows] = await pool.query(`SELECT ${USER_COLUMNS} FROM usuario ORDER BY idUsuario DESC`);
     return rows;
 };
 
@@ -29,7 +29,7 @@ export const findAll = async () => {
  */
 export const findById = async (id) => {
     const pool = await getPool();
-    const [rows] = await pool.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`, [id]);
+    const [rows] = await pool.query(`SELECT ${USER_COLUMNS} FROM usuario WHERE idUsuario = ?`, [id]);
     return rows[0] ?? null;
 };
 
@@ -38,7 +38,7 @@ export const findById = async (id) => {
  */
 export const create = async ({ name, email }) => {
     const pool = await getPool();
-    const [result] = await pool.query('INSERT INTO users (name, email) VALUES (?, ?)', [name, email]);
+    const [result] = await pool.query('INSERT INTO usuario (nombre, email) VALUES (?, ?)', [name, email]);
     return result.insertId;
 };
 
@@ -48,7 +48,7 @@ export const create = async ({ name, email }) => {
 export const update = async (id, { name, email }) => {
     const pool = await getPool();
     const [result] = await pool.query(
-        'UPDATE users SET name = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        'UPDATE usuario SET nombre = ?, email = ? WHERE idUsuario = ?',
         [name, email, id]
     );
     return result.affectedRows > 0;
@@ -59,7 +59,7 @@ export const update = async (id, { name, email }) => {
  */
 export const remove = async (id) => {
     const pool = await getPool();
-    const [result] = await pool.query('DELETE FROM users WHERE id = ?', [id]);
+    const [result] = await pool.query('DELETE FROM usuario WHERE idUsuario = ?', [id]);
     return result.affectedRows > 0;
 };
 
