@@ -9,6 +9,7 @@ import catalogRoutes from './src/routes/catalog.routes.js';
 import programaRoutes from './src/routes/programa.routes.js';
 import facultadRoutes from './src/routes/facultad.routes.js';
 import organizacionRoutes from './src/routes/organizacion.routes.js';
+import eventoRoutes from './src/routes/evento.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,6 +83,7 @@ export const createApp = () => {
   app.use('/api/programas', programaRoutes);
   app.use('/api/facultades', facultadRoutes);
   app.use('/api/organizaciones', organizacionRoutes);
+  app.use('/api/eventos', eventoRoutes);
 
 // Archivos estáticos y frontend
 app.use(express.static(path.join(__dirname, 'public')));
