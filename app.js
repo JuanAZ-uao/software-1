@@ -8,6 +8,10 @@ import { authRouter } from './src/routes/auth.routes.js';
 import catalogRoutes from './src/routes/catalog.routes.js';
 import programaRoutes from './src/routes/programa.routes.js';
 import facultadRoutes from './src/routes/facultad.routes.js';
+import { organizationsRouter } from './src/routes/organizations.routes.js';
+import { installationsRouter } from './src/routes/installations.routes.js';
+import { eventsRouter } from './src/routes/events.routes.js';
+import { organizationEventRouter } from './src/routes/organizationEvent.routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,6 +84,11 @@ export const createApp = () => {
   app.use('/api/catalog', catalogRoutes);
   app.use('/api/programas', programaRoutes);
   app.use('/api/facultades', facultadRoutes);
+  app.use('/api/organizations', organizationsRouter);
+  app.use('/api/installations', installationsRouter);
+  app.use('/api/events', eventsRouter);
+  app.use('/api/organization-events', organizationEventRouter);
+  app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
   app.use('/api', apiNotFoundHandler);
 
   // Archivos estáticos y frontend
