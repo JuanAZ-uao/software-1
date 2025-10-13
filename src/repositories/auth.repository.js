@@ -18,39 +18,40 @@ import pool from '../db/pool.js';
  * @returns {object|null} Usuario o null si no existe
  */
 export const findUserByEmail = async (email) => {
-	const [rows] = await pool.execute(
-		`SELECT u.*, c.clave, 
-						CASE 
-								WHEN e.idUsuario IS NOT NULL THEN 'estudiante'
-								WHEN d.idUsuario IS NOT NULL THEN 'docente' 
-								WHEN s.idUsuario IS NOT NULL THEN 'secretaria'
-								ELSE 'usuario'
-						END as tipo
-		 FROM usuario u 
-		 LEFT JOIN contraseña c ON u.idUsuario = c.idUsuario AND c.estado = 'activa'
-		 LEFT JOIN estudiante e ON u.idUsuario = e.idUsuario
-		 LEFT JOIN docente d ON u.idUsuario = d.idUsuario  
-		 LEFT JOIN secretariaAcademica s ON u.idUsuario = s.idUsuario
-		 WHERE u.email = ?`,
-		[email]
-	);
-	return rows[0] || null;
+    const [rows] = await pool.execute(
+        `SELECT u.*, c.clave, 
+                        CASE 
+                                WHEN e.idUsuario IS NOT NULL THEN 'estudiante'
+                                WHEN d.idUsuario IS NOT NULL THEN 'docente' 
+                                WHEN s.idUsuario IS NOT NULL THEN 'secretaria'
+                                ELSE 'usuario'
+                        END as tipo
+         FROM usuario u 
+         LEFT JOIN contraseña c ON u.idUsuario = c.idUsuario AND c.estado = 'activa'
+         LEFT JOIN estudiante e ON u.idUsuario = e.idUsuario
+         LEFT JOIN docente d ON u.idUsuario = d.idUsuario  
+         LEFT JOIN secretariaAcademica s ON u.idUsuario = s.idUsuario
+         WHERE u.email = ?`,
+        [email]
+    );
+    return rows[0] || null;
 };
 
 /**
- * Valida la contraseña de un usuario (por ahora comparación simple, sin hash)
+ * Valida la contraseña de un usuario comparando con el hash almacenado
  * @param {number} userId
- * @param {string} password
+ * @param {string} password - Contraseña en texto plano
  * @returns {boolean}
  */
 export const validateUserPassword = async (userId, password) => {
-	const [rows] = await pool.execute(
-		'SELECT clave FROM `contraseña` WHERE idUsuario = ? AND estado = "activa"',
-		[userId]
-	);
-	if (!rows[0]) return false;
-	// Comparación simple por ahora (para debugging)
-	return password === rows[0].clave;
+    const [rows] = await pool.execute(
+        'SELECT clave FROM `contraseña` WHERE idUsuario = ? AND estado = "activa"',
+        [userId]
+    );
+    if (!rows[0]) return false;
+    
+    // Comparar la contraseña en texto plano con el hash almacenado
+    return await bcrypt.compare(password, rows[0].clave);
 };
 
 /**
@@ -77,13 +78,14 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
     const userId = userResult.insertId;
     console.log('✅ Usuario creado con ID:', userId);
     
-    // 2. Insertar contraseña
-    console.log('🔑 Insertando contraseña...');
+    // 2. Insertar contraseña ENCRIPTADA
+    console.log('🔑 Encriptando y guardando contraseña...');
+    const hashedPassword = await bcrypt.hash(password, 10);
     await connection.execute(
       'INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES (?, CURDATE(), ?, "activa")',
-      [userId, password]
+      [userId, hashedPassword]
     );
-    console.log('✅ Contraseña insertada');
+    console.log('✅ Contraseña encriptada e insertada');
     
     // 3. Insertar en tabla específica según tipo CON RELACIONES CORRECTAS
     console.log('👤 Insertando tipo de usuario:', tipo);
@@ -145,9 +147,17 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
   }
 };
 
+/**
+ * Actualiza la contraseña de un usuario encriptándola
+ * @param {number} userId
+ * @param {string} newPassword - Contraseña nueva en texto plano
+ */
 export const updateUserPassword = async (userId, newPassword) => {
+    console.log('🔑 Encriptando nueva contraseña...');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
     await pool.execute(
-        'UPDATE contraseña SET clave = ?, fechaCambio = NOW(), estado = "activa" WHERE idUsuario = ?',
-        [newPassword, userId]
+        'UPDATE contraseña SET clave = ?, fechaCambio = CURDATE() WHERE idUsuario = ? AND estado = "activa"',
+        [hashedPassword, userId]
     );
+    console.log('✅ Contraseña actualizada y encriptada');
 };

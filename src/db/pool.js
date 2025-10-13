@@ -5,12 +5,12 @@ const pool = mysql.createPool({
   host: 'localhost',
   user: 'root',
   password: 'Admin123',
-  database: 'gestionEventos',
+  database: 'gestioneventos',
   port: 3306,
   waitForConnections: true,
   connectionLimit: 10, // Valor por defecto, puedes ajustarlo si lo deseas
   queueLimit: 0
-});
+}); 
 
 // Exportación por defecto
 export default pool;

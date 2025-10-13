@@ -81,6 +81,18 @@
 .calendar .day { padding: 10px; border:1px solid var(--border); border-radius: 8px; text-align:center; }
 .calendar .day.has { background: var(--accent); }
 
+/* Organization modal overrides: center and scrollable */
+.modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.45); z-index: 3000; padding: 20px; }
+.modal.open { display: flex; }
+.modal .sheet { width: 100%; max-width: 720px; background: var(--card); border:1px solid var(--border); border-radius: var(--radius); box-shadow: 0 16px 48px rgba(0,0,0,.18); overflow: hidden; max-height: 90vh; display:flex; flex-direction:column; }
+.modal .sheet .head { padding: 12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background: transparent; }
+.modal .sheet .body { padding: 16px; overflow:auto; }
+@media (max-width: 640px) {
+  .modal .sheet { width: 100%; margin: 0 12px; max-width: calc(100% - 24px); border-radius: 8px; }
+  .modal .sheet .body { max-height: 75vh; }
+}
+
+
 /* Responsive nav (mobile) */
 .menu-btn { display:none; }
 @media (max-width: 768px) {

@@ -1,5 +1,5 @@
 -- CREAR BASE DE DATOS
-
+drop database if exists gestionEventos;
 CREATE DATABASE IF NOT EXISTS gestionEventos;
 
 USE gestionEventos;
@@ -162,6 +162,11 @@ CREATE TABLE organizacion (
     telefono VARCHAR(20)
 );
 
+-- 1) índice único para prevenir duplicados evento (nombre+fecha+hora+instalacion)
+ALTER TABLE evento
+ADD CONSTRAINT ux_evento_unique UNIQUE (nombre, fecha, hora, idInstalacion);
+
+
 -- Tabla Asociativa (Rompimiento de evento y organizacion)
 CREATE TABLE organizacion_evento (
     idOrganizacion INT NOT NULL,
@@ -199,6 +204,20 @@ CREATE TABLE evaluacion (
         ON DELETE RESTRICT
 );
 
+-- crea tabla asociativa evento_instalacion
+CREATE TABLE IF NOT EXISTS evento_instalacion (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  idEvento INT NOT NULL,
+  idInstalacion INT NOT NULL
+  );
+
+-- Ajusta nombres de FK si tus tablas tienen otros nombres
+ALTER TABLE evento_instalacion
+  ADD CONSTRAINT fk_evento_inst_event FOREIGN KEY (idEvento) REFERENCES evento(idEvento) ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE evento_instalacion
+  ADD CONSTRAINT fk_evento_inst_inst FOREIGN KEY (idInstalacion) REFERENCES instalacion(idInstalacion) ON DELETE RESTRICT ON UPDATE CASCADE;
+
 -- TRIGGERS
 --   1) validar que el organizador de un evento sea estudiante o docente
 --   2) validar que solo una secretariaAcademica pueda crear una evaluacion
@@ -235,13 +254,7 @@ END$$
 
 DELIMITER ;
 
-CREATE TABLE IF NOT EXISTS users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  email VARCHAR(100) NOT NULL UNIQUE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+
 
 -- Insertar usuarios de prueba en la tabla usuario
 INSERT INTO usuario (idUsuario, nombre, apellidos, email, telefono) VALUES
@@ -254,3 +267,21 @@ INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES
 (1, CURDATE(), '$2b$10$hashedPassword123456', 'activa'),
 (2, CURDATE(), '$2b$10$hashedPassword123456', 'activa'),
 (3, CURDATE(), '$2b$10$hashedPassword123456', 'activa');
+
+insert into facultad values(1, "Ingeniería"), (2, "Ciencias"), (3,"Administración"), (4, "Humanidades");
+insert into programa values(1, "Ingeniería de Sistemas", 1), (2, "Ingeniería Civil", 1), (3,"Matemáticas", 2), (4, "Física", 2), (5, "Administración de Empresas", 3), (6, "Psicología", 4);
+insert into unidadacademica values(1, "Departamento de Ingeniería", 1), (2, "Departamento de Ciencias Exactas", 2), (3,"Departamento de Negocios", 3), (4, "Departamento de Comunicación Social", 4);
+insert into instalacion values (1,"Laboratorio de Informatica", "Labs 2", 100, "laboratorio"), (2, "Auditorio Yquinde","Ala Norte",300, "auditorio"), (3,"4302","Aulas 4 Piso 3", 30, "salon");
+
+select * from organizacion;
+select * from aval;
+select * from evento;
+select * from organizacion_evento;
+select * from usuario;
+select * from evento_instalacion;
+
+ALTER TABLE organizacion
+ADD COLUMN created_by INT NOT NULL AFTER representanteLegal;
+
+ALTER TABLE organizacion
+ADD CONSTRAINT fk_organizacion_creator FOREIGN KEY (created_by) REFERENCES usuario(idUsuario);

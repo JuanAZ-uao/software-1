@@ -1,24 +1,13 @@
-/**
- * header.js - Componente de cabecera (Header)
- *
- * Este componente renderiza la barra superior de la aplicación, mostrando la marca,
- * navegación principal, notificaciones, menú de usuario y controles de tema.
- * Gestiona interacciones como logout, cambio de tema y apertura de menús.
- */
-
 import { getCurrentUser, logout } from '../auth.js';
 import { getState, setState } from '../utils/state.js';
 
-/**
- * Renderiza la cabecera principal con navegación, notificaciones y perfil de usuario.
- * @returns {string} HTML del header
- */
-export function renderHeader(){
+export function renderHeader() {
   const user = getCurrentUser();
   const role = user?.role || 'Estudiante';
   const isAdmin = role === 'Administrador';
-  const { notifications } = getState();
-  const unread = notifications.filter(n=>!n.read).length;
+
+  const { notifications = [] } = getState();
+  const unread = Array.isArray(notifications) ? notifications.filter(n => !n.read).length : 0;
 
   return `
     <div class="brand">
@@ -27,9 +16,7 @@ export function renderHeader(){
     </div>
     <nav class="nav" id="main-nav">
       <a href="#dashboard">Dashboard</a>
-      <a href="#organizations">Organizaciones</a>
       <a href="#events">Eventos</a>
-      ${isAdmin ? '<a href="#users">Usuarios</a>' : ''}
       <a href="#calendar">Calendario</a>
     </nav>
     <div class="header__tools">
@@ -50,12 +37,6 @@ export function renderHeader(){
   `;
 }
 
-/**
- * Listeners globales para interacciones del header y menús
- * - Logout
- * - Cambio de tema
- * - Menú de usuario y navegación móvil
- */
 document.addEventListener('click', (e) => {
   const avatar = e.target.closest('.avatar');
   const profileDd = document.getElementById('profile-dd');
@@ -76,27 +57,31 @@ document.addEventListener('click', (e) => {
   }
   if (notifBtn) {
     const st = getState();
-    const items = st.notifications.map(n => `
-      <div class="notif-item">
-        <div style="display:flex;justify-content:space-between;">
-          <strong>${n.title}</strong>
-          ${!n.read ? `<button class="btn small" data-read="${n.id}">Leer</button>` : ''}
-        </div>
-        <div class="muted">${n.type} • ${new Date(n.date).toLocaleString()}</div>
-      </div>`).join('') || '<div class="notif-item muted">Sin notificaciones</div>';
+    const items = Array.isArray(st.notifications)
+      ? st.notifications.map(n => `
+        <div class="notif-item">
+          <div style="display:flex;justify-content:space-between;">
+            <strong>${n.title}</strong>
+            ${!n.read ? `<button class="btn small" data-read="${n.id}">Leer</button>` : ''}
+          </div>
+          <div class="muted">${n.type} • ${new Date(n.date).toLocaleString()}</div>
+        </div>`).join('')
+      : '<div class="notif-item muted">Sin notificaciones</div>';
     if (notifDd) { notifDd.innerHTML = items; notifDd.classList.toggle('open'); }
     return;
   }
-  // Cerrar dropdowns si click fuera
+
   if (!e.target.closest('.profile-menu')) profileDd?.classList.remove('open');
   if (!e.target.closest('#notifBtn')) notifDd?.classList.remove('open');
 
-  // Marcar leído
   const readBtn = e.target.closest('button[data-read]');
   if (readBtn) {
     const id = readBtn.getAttribute('data-read');
     const st = getState();
-    const i = st.notifications.findIndex(n=>n.id===id);
-    if (i>=0) { st.notifications[i].read = true; setState(st); }
+    const i = Array.isArray(st.notifications) ? st.notifications.findIndex(n => n.id === id) : -1;
+    if (i >= 0) {
+      st.notifications[i].read = true;
+      setState(st);
+    }
   }
 });

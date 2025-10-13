@@ -8,6 +8,7 @@
  * - Renderizado de la vista de autenticación
  * - Validación de formularios y mensajes de usuario
  * - Navegación SPA tras login/logout
+ * - Sistema de recuperación de contraseña con Gmail API
  */
 
 import { navigateTo } from './utils/router.js';
@@ -77,6 +78,16 @@ async function apiCall(endpoint, options = {}) {
 }
 
 /**
+ * Función SIMPLIFICADA para navegar al login
+ */
+function goToLogin() {
+  console.log('🔄 Navegando al login...');
+  
+  // Método directo: recargar la página principal
+  window.location.href = '/';
+}
+
+/**
  * Inicia sesión con email y contraseña
  * @param {string} email
  * @param {string} password
@@ -143,7 +154,203 @@ function showMessage(text, type = 'info') {
   messageEl.style.display = 'block';
   setTimeout(() => {
     messageEl.style.display = 'none';
-  }, 5000);
+  }, 8000);
+}
+
+/**
+ * Crea dinámicamente el formulario de restablecer contraseña usando JavaScript puro
+ * @param {string} token Token de recuperación
+ */
+function createResetPasswordForm(token) {
+  // Limpiar contenido actual
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+
+  // Crear elementos del formulario
+  const container = document.createElement('div');
+  container.className = 'auth-container';
+
+  const form = document.createElement('div');
+  form.className = 'auth-form';
+
+  const title = document.createElement('h1');
+  title.className = 'auth-title';
+  title.textContent = '🔐 Restablecer Contraseña';
+
+  const subtitle = document.createElement('p');
+  subtitle.className = 'muted';
+  subtitle.style.textAlign = 'center';
+  subtitle.style.marginBottom = '20px';
+  subtitle.textContent = 'Universidad Connect';
+
+  const resetForm = document.createElement('form');
+  resetForm.id = 'resetPasswordForm';
+
+  // Campo nueva contraseña
+  const newPasswordGroup = document.createElement('div');
+  newPasswordGroup.className = 'form-group';
+  
+  const newPasswordLabel = document.createElement('label');
+  newPasswordLabel.textContent = 'Nueva Contraseña';
+  
+  const newPasswordInput = document.createElement('input');
+  newPasswordInput.type = 'password';
+  newPasswordInput.name = 'password';
+  newPasswordInput.required = true;
+  newPasswordInput.placeholder = '••••••';
+  newPasswordInput.minLength = 6;
+  
+  const newPasswordHelp = document.createElement('small');
+  newPasswordHelp.style.color = '#666';
+  newPasswordHelp.style.fontSize = '12px';
+  newPasswordHelp.style.marginTop = '4px';
+  newPasswordHelp.style.display = 'block';
+  newPasswordHelp.textContent = 'Mínimo 6 caracteres, debe incluir una mayúscula y un carácter especial (!@#$%^&*()_+-=[]{}|;:,.<>?")';
+
+  newPasswordGroup.appendChild(newPasswordLabel);
+  newPasswordGroup.appendChild(newPasswordInput);
+  newPasswordGroup.appendChild(newPasswordHelp);
+
+  // Campo confirmar contraseña
+  const confirmPasswordGroup = document.createElement('div');
+  confirmPasswordGroup.className = 'form-group';
+  
+  const confirmPasswordLabel = document.createElement('label');
+  confirmPasswordLabel.textContent = 'Confirmar Nueva Contraseña';
+  
+  const confirmPasswordInput = document.createElement('input');
+  confirmPasswordInput.type = 'password';
+  confirmPasswordInput.name = 'confirmPassword';
+  confirmPasswordInput.required = true;
+  confirmPasswordInput.placeholder = '••••••';
+  confirmPasswordInput.minLength = 6;
+
+  confirmPasswordGroup.appendChild(confirmPasswordLabel);
+  confirmPasswordGroup.appendChild(confirmPasswordInput);
+
+  // Botón submit
+  const submitButton = document.createElement('button');
+  submitButton.type = 'submit';
+  submitButton.className = 'btn primary';
+  submitButton.id = 'resetBtn';
+  submitButton.textContent = 'Restablecer Contraseña';
+
+  // ✅ SOLUCION SIMPLIFICADA: Botón directo en lugar de enlace
+  const backDiv = document.createElement('div');
+  backDiv.style.textAlign = 'center';
+  backDiv.style.marginTop = '16px';
+  
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'btn';
+  backButton.style.backgroundColor = 'transparent';
+  backButton.style.border = 'none';
+  backButton.style.color = '#666';
+  backButton.style.fontSize = '14px';
+  backButton.style.cursor = 'pointer';
+  backButton.style.textDecoration = 'underline';
+  backButton.textContent = '← Volver al login';
+  
+  // ✅ Event listener SIMPLIFICADO - solo un método
+  backButton.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    console.log('🔄 Click en volver al login - método simplificado');
+    goToLogin();
+  });
+
+  backDiv.appendChild(backButton);
+
+  // Mensaje
+  const messageDiv = document.createElement('div');
+  messageDiv.id = 'reset-message';
+  messageDiv.className = 'message';
+  messageDiv.style.display = 'none';
+
+  // Construir formulario
+  resetForm.appendChild(newPasswordGroup);
+  resetForm.appendChild(confirmPasswordGroup);
+  resetForm.appendChild(submitButton);
+
+  form.appendChild(title);
+  form.appendChild(subtitle);
+  form.appendChild(resetForm);
+  form.appendChild(backDiv);
+  form.appendChild(messageDiv);
+
+  container.appendChild(form);
+  app.appendChild(container);
+
+  // Event listener para el formulario
+  resetForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const resetBtn = document.getElementById('resetBtn');
+    const messageEl = document.getElementById('reset-message');
+    const password = newPasswordInput.value.trim();
+    const confirmPassword = confirmPasswordInput.value.trim();
+
+    // Validaciones
+    if (!password || !confirmPassword) {
+      showResetMessage('Todos los campos son requeridos', 'error', messageEl);
+      return;
+    }
+
+    if (!isValidPassword(password)) {
+      showResetMessage('La contraseña debe tener al menos 6 caracteres, una mayúscula y un carácter especial', 'error', messageEl);
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      showResetMessage('Las contraseñas no coinciden', 'error', messageEl);
+      return;
+    }
+
+    // Deshabilitar botón
+    resetBtn.disabled = true;
+    resetBtn.textContent = 'Restableciendo...';
+
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        showResetMessage(result.message, 'success', messageEl);
+        resetForm.reset();
+        
+        // ✅ CAMBIO: Usar la función simplificada
+        setTimeout(() => {
+          console.log('✅ Contraseña cambiada exitosamente, redirigiendo al login...');
+          goToLogin();
+        }, 2000);
+      } else {
+        showResetMessage(result.message, 'error', messageEl);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      showResetMessage('Error de conexión. Inténtalo de nuevo.', 'error', messageEl);
+    } finally {
+      resetBtn.disabled = false;
+      resetBtn.textContent = 'Restablecer Contraseña';
+    }
+  });
+}
+
+/**
+ * Muestra mensaje en el formulario de reset
+ */
+function showResetMessage(text, type, messageEl) {
+  messageEl.textContent = text;
+  messageEl.className = `message ${type}`;
+  messageEl.style.display = 'block';
+  setTimeout(() => {
+    messageEl.style.display = 'none';
+  }, 8000);
 }
 
 /**
@@ -195,7 +402,10 @@ export function renderAuthView() {
             </div>
             <div class="form-group">
               <label>Contraseña</label>
-              <input type="password" name="password" required placeholder="••••••">
+              <input type="password" name="password" required placeholder="••••••" minlength="6">
+              <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                Mínimo 6 caracteres, debe incluir una mayúscula y un carácter especial (!@#$%^&*()_+-=[]{}|;:,.<>?")
+              </small>
             </div>
             <div class="form-group">
               <label>Tipo de Usuario</label>
@@ -236,8 +446,11 @@ export function renderAuthView() {
             <div class="form-group">
               <label>Ingresa tu email para recuperar tu contraseña</label>
               <input type="email" name="email" required placeholder="tu@universidad.edu">
+              <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                Se enviará un enlace a tu correo que expirará en 15 minutos
+              </small>
             </div>
-            <button type="submit" class="btn primary">Enviar enlace</button>
+            <button type="submit" class="btn primary" id="forgotBtn">Enviar Enlace de Recuperación</button>
             <button type="button" class="btn" id="backToLogin" style="margin-left:8px;">Volver</button>
           </form>
         </div>
@@ -306,6 +519,10 @@ export function bindAuthEvents() {
         showMessage('Por favor ingresa un email válido', 'error');
         return;
       }
+      if (!isValidPassword(userData.password)) {
+        showMessage('La contraseña debe tener al menos 6 caracteres, una mayúscula y un carácter especial (!@#$%^&*()_+-=[]{}|;:,.<>?")', 'error');
+        return;
+      }
       await register(userData);
     });
   }
@@ -332,23 +549,42 @@ export function bindAuthEvents() {
     });
   }
 
-  // Enviar email de recuperación
+  // Enviar solicitud de recuperación por EMAIL REAL con Gmail API
   const forgotForm = document.getElementById('forgotForm');
   if (forgotForm) {
     forgotForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = forgotForm.email.value.trim();
+      const forgotBtn = document.getElementById('forgotBtn');
+      
       if (!email) return showMessage('Ingresa tu email', 'error');
+      
+      // Deshabilitar botón mientras se envía
+      forgotBtn.disabled = true;
+      forgotBtn.textContent = 'Enviando...';
+      
       try {
-        await apiCall('/auth/forgot-password', {
+        const response = await apiCall('/auth/forgot-password', {
           method: 'POST',
           body: JSON.stringify({ email })
         });
-        showMessage('Si el email existe, recibirás instrucciones para restablecer tu contraseña.', 'info');
+        
+        showMessage(response.message, 'success');
+        forgotForm.reset();
+        
+        // Volver a login después de mostrar el mensaje
+        setTimeout(() => {
+          document.getElementById('forgot-form').style.display = 'none';
+          document.getElementById('forgot-form').classList.remove('active');
+          document.getElementById('login-form').classList.add('active');
+        }, 3000);
+        
       } catch (err) {
-        showMessage('Error al enviar el correo de recuperación', 'error');
+        showMessage('Error al enviar el email de recuperación', 'error');
+      } finally {
+        forgotBtn.disabled = false;
+        forgotBtn.textContent = 'Enviar Enlace de Recuperación';
       }
-      forgotForm.reset();
     });
   }
 
@@ -372,6 +608,20 @@ export function bindAuthEvents() {
 }
 
 /**
+ * Detecta si estamos en la página de reset y maneja el token
+ */
+export function handleResetPasswordPage() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const token = urlParams.get('token');
+  
+  if (window.location.pathname === '/reset-password' && token) {
+    createResetPasswordForm(token);
+    return true;
+  }
+  return false;
+}
+
+/**
  * Valida el formato de un email
  * @param {string} email
  * @returns {boolean}
@@ -379,6 +629,25 @@ export function bindAuthEvents() {
 function validateEmail(email) {
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return re.test(email);
+}
+
+/**
+ * Valida que la contraseña cumpla con los requisitos de seguridad
+ * @param {string} password
+ * @returns {boolean}
+ */
+function isValidPassword(password) {
+  if (!password || password.length < 6) {
+    return false;
+  }
+  
+  // Verificar que tenga al menos una mayúscula
+  const hasUpperCase = /[A-Z]/.test(password);
+  
+  // Verificar que tenga al menos un carácter especial
+  const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?"]/.test(password);
+  
+  return hasUpperCase && hasSpecialChar;
 }
 
 /**
