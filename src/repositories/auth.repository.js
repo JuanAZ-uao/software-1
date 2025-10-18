@@ -54,13 +54,22 @@ export const validateUserPassword = async (userId, password) => {
     return await bcrypt.compare(password, rows[0].clave);
 };
 
+//veerificar si el documento ya está registrado
+export async function isDocumentoRegistrado(documentoId) {
+  const [rows] = await pool.execute(
+    'SELECT idUsuario FROM usuario WHERE documento = ?',
+    [documentoId]
+  );
+  return rows.length > 0;
+}
+
 /**
  * Crea un nuevo usuario y registros relacionados en la base de datos
  * @param {object} userData
  * @returns {object} Usuario creado
  */
-export const createUser = async ({ nombre, apellidos, email, telefono, password, tipo }) => {
-  console.log('🔵 Repository - Creando usuario:', { nombre, apellidos, email, telefono, tipo });
+export const createUser = async ({ nombre, apellidos, email, documento, telefono, password, tipo }) => {
+  console.log('🔵 Repository - Creando usuario:', { nombre, apellidos, documento, email, telefono, tipo });
   
   const connection = await pool.getConnection();
   
@@ -71,8 +80,8 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
     // 1. Insertar en la tabla usuario
     console.log('📝 Insertando en tabla usuario...');
     const [userResult] = await connection.execute(
-      'INSERT INTO usuario (nombre, apellidos, email, telefono) VALUES (?, ?, ?, ?)',
-      [nombre, apellidos, email, telefono]
+      'INSERT INTO usuario (nombre, apellidos, documento, email, telefono) VALUES (?, ?, ?, ?, ?)',
+      [nombre, apellidos, documento, email, telefono]
     );
     
     const userId = userResult.insertId;
@@ -133,6 +142,7 @@ export const createUser = async ({ nombre, apellidos, email, telefono, password,
       idUsuario: userId,
       nombre,
       apellidos,
+      documento,
       email,
       telefono,
       tipo

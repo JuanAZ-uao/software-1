@@ -393,6 +393,10 @@ export function renderAuthView() {
               <input type="text" name="apellidos" required placeholder="Tus apellidos">
             </div>
             <div class="form-group">
+              <label>Documento</label>
+              <input type="text" name="documento" required placeholder="Número de documento">
+            </div>
+            <div class="form-group">
               <label>Email</label>
               <input type="email" name="email" required placeholder="tu@universidad.edu">
             </div>
@@ -500,6 +504,7 @@ export function bindAuthEvents() {
       const userData = {
         nombre: formData.get('nombre').trim(),
         apellidos: formData.get('apellidos').trim(),
+        documento: formData.get('documento').trim(),
         email: formData.get('email').trim(),
         telefono: formData.get('telefono').trim(),
         password: formData.get('password').trim(),

@@ -25,9 +25,9 @@ export const validateLogin = (req, res, next) => {
  * Valida los datos de registro de usuario
  */
 export const validateRegister = (req, res, next) => {
-    const { nombre, apellidos, email, telefono, password, tipo } = req.body;
+    const { nombre, apellidos, documento, email, telefono, password, tipo } = req.body;
     // Campos requeridos
-    if (!nombre || !apellidos || !email || !telefono || !password || !tipo) {
+    if (!nombre || !apellidos || !documento || !email || !telefono || !password || !tipo) {
         throw new ValidationError('Todos los campos son requeridos');
     }
     // Validar email

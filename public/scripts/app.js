@@ -5,12 +5,12 @@ import { qs, ensureTheme } from './utils/helpers.js';
 import { renderHeader } from './components/header.js';
 import { renderDashboard } from './components/dashboard.js';
 import { renderProfile } from './components/profile.js';
+import { renderOrganizations } from './components/organizations.js';
 import { renderEvents } from './components/events.js';
 import { renderUsers } from './components/users.js';
 import { renderCalendar } from './components/calendar.js';
 import { renderNotifications } from './components/notifications.js';
 import { renderSettings } from './components/settings.js';
-import { renderMyEvents, bindMyEventsListeners } from './components/MyEvents.js';
 import { renderAuthView, isAuthenticated, bindAuthEvents, handleResetPasswordPage } from './auth.js';
 
 const mount = document.getElementById('app');
@@ -63,8 +63,9 @@ export async function loadInitialData() {
   }
 }
 
+
 async function renderRoute(route) {
-  // Detectar si estamos en la página de reset-password
+  // NUEVO: Detectar si estamos en la página de reset-password
   if (window.location.pathname === '/reset-password') {
     const handled = handleResetPasswordPage();
     if (handled) return;
@@ -87,7 +88,6 @@ async function renderRoute(route) {
     case 'profile': view = renderProfile(); break;
     case 'organizations': view = await renderOrganizations(); break;
     case 'events': view = await renderEvents(); break;
-    case 'my-events': view = renderMyEvents(); break;
     case 'users': view = renderUsers(); break;
     case 'calendar': view = renderCalendar(); break;
     case 'notifications': view = renderNotifications(); break;
@@ -96,10 +96,6 @@ async function renderRoute(route) {
   }
 
   mount.innerHTML = renderShell(view);
-
-  // Enlazar listeners específicos por vista
-  if (route === 'my-events') bindMyEventsListeners();
-
   const headerSlot = qs('#header-slot');
   if (headerSlot) headerSlot.innerHTML = renderHeader();
 }
@@ -122,12 +118,11 @@ async function main() {
     if (handled) return;
   }
 
-  // Inicializar router primero
-  initRouter(async (route) => {
-    if (isAuthenticated()) {
-      await loadInitialData();
-    }
+  if (isAuthenticated()) {
+    await loadInitialData(); // ← Esto carga eventos, organizaciones, instalaciones, etc.
+  }
 
+  initRouter((route) => {
     renderRoute(route).catch(err => {
       console.error('Error rendering route:', err);
       navigateTo('dashboard');

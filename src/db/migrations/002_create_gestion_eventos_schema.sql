@@ -40,7 +40,16 @@ CREATE TABLE usuario (
     nombre VARCHAR(100) NOT NULL,
     apellidos VARCHAR(100) NOT NULL,
     email VARCHAR(150) NOT NULL,
-    telefono VARCHAR(20) NOT NULL
+    telefono VARCHAR(20) NOT NULL,
+    documento INT NOT NULL UNIQUE,
+    ADD CONSTRAINT fk_usuario_documento
+    FOREIGN KEY (documento)
+    REFERENCES documento(id);
+);
+
+-- Tabla Documento
+CREATE TABLE documento (
+    id INT AUTO_INCREMENT PRIMARY KEY,
 );
 
 -- Tabla Contraseña
