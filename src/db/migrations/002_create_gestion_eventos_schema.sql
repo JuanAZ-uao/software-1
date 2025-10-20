@@ -34,6 +34,12 @@ CREATE TABLE programa (
         ON DELETE RESTRICT
 );
 
+-- Tabla Documento
+CREATE TABLE documento (
+    id INT AUTO_INCREMENT PRIMARY KEY
+);
+
+
 -- Tabla Usuario (superclase)
 CREATE TABLE usuario (
     idUsuario INT AUTO_INCREMENT PRIMARY KEY,
@@ -42,15 +48,11 @@ CREATE TABLE usuario (
     email VARCHAR(150) NOT NULL,
     telefono VARCHAR(20) NOT NULL,
     documento INT NOT NULL UNIQUE,
-    ADD CONSTRAINT fk_usuario_documento
+	CONSTRAINT fk_usuario_documento
     FOREIGN KEY (documento)
-    REFERENCES documento(id);
+    REFERENCES documento(id)
 );
 
--- Tabla Documento
-CREATE TABLE documento (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-);
 
 -- Tabla Contraseña
 CREATE TABLE contraseña(
@@ -262,20 +264,6 @@ BEGIN
 END$$
 
 DELIMITER ;
-
-
-
--- Insertar usuarios de prueba en la tabla usuario
-INSERT INTO usuario (idUsuario, nombre, apellidos, email, telefono) VALUES
-(1, 'Ana', 'García', 'estudiante@uni.edu', '1234567890'),
-(2, 'Carlos', 'Pérez', 'profesor@uni.edu', '1234567891'),
-(3, 'Admin', 'Sistema', 'admin@uni.edu', '1234567892');
-
--- Insertar contraseñas (hash de '123456')
-INSERT INTO contraseña (idUsuario, fechaCambio, clave, estado) VALUES
-(1, CURDATE(), '$2b$10$hashedPassword123456', 'activa'),
-(2, CURDATE(), '$2b$10$hashedPassword123456', 'activa'),
-(3, CURDATE(), '$2b$10$hashedPassword123456', 'activa');
 
 insert into facultad values(1, "Ingeniería"), (2, "Ciencias"), (3,"Administración"), (4, "Humanidades");
 insert into programa values(1, "Ingeniería de Sistemas", 1), (2, "Ingeniería Civil", 1), (3,"Matemáticas", 2), (4, "Física", 2), (5, "Administración de Empresas", 3), (6, "Psicología", 4);
