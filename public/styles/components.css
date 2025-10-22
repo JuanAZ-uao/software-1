@@ -1,4 +1,3 @@
-
 /* Auth Container */
 .auth-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
 .auth-form { width: 100%; max-width: 400px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 32px; }
@@ -26,76 +25,788 @@
 .message.error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
 .message.info { background: #eff6ff; color: #2563eb; border: 1px solid #dbeafe; }
 
-/* Header */
-.header { position: sticky; top:0; z-index:20; border-bottom:1px solid var(--border); background: color-mix(in srgb, var(--background) 85%, transparent); backdrop-filter: blur(8px); }
-.header__inner { display:flex; align-items:center; gap:12px; padding: 12px 0; }
-.brand { display:flex; align-items:center; gap:10px; font-weight:700; }
-.brand__logo { width: 28px; height:28px; border-radius: 8px; background: linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%); }
-.brand__name { letter-spacing: .2px; }
+/* ============================================
+   HEADER - ESTRUCTURA COMPLETA Y CORREGIDA
+   ============================================ */
 
-.nav { margin-left:auto; display:flex; gap: 8px; align-items:center; }
-.nav a { padding:8px 10px; border-radius: var(--radius); color: inherit; text-decoration:none; transition: background .15s ease; }
-.nav a.active, .nav a:hover { background: var(--accent); color: var(--accent-foreground); }
+/* Header principal */
+.header { 
+  position: sticky; 
+  top: 0; 
+  z-index: 20; 
+  border-bottom: 1px solid var(--border); 
+  background: color-mix(in srgb, var(--background) 85%, transparent); 
+  backdrop-filter: blur(8px); 
+  width: 100%;
+}
 
-.header__tools { display:flex; gap:8px; align-items:center; margin-left:12px; }
-.theme-toggle { border:1px solid var(--border); padding: 8px 10px; border-radius: var(--radius); background: var(--card); cursor: pointer; }
+.header__inner { 
+  display: flex; 
+  align-items: center; 
+  gap: 12px; 
+  padding: 12px 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
 
-.avatar { width:32px; height:32px; border-radius: 999px; object-fit: cover; border:1px solid var(--border); }
-.profile-menu { position: relative; }
-.profile-dropdown { position:absolute; right:0; top: 40px; width: 220px; background: var(--card); border:1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); opacity:0; transform: translateY(-6px); pointer-events:none; transition: opacity .15s ease, transform .15s ease; }
-.profile-dropdown.open { opacity:1; transform: translateY(0); pointer-events:auto; }
-.profile-dropdown a, .profile-dropdown button { display:block; width:100%; text-align:left; padding:10px 12px; background:transparent; border:none; cursor:pointer; }
-.profile-dropdown a:hover, .profile-dropdown button:hover { background: var(--accent); }
+/* Brand/Logo */
+.brand { 
+  display: flex; 
+  align-items: center; 
+  gap: 10px; 
+  font-weight: 700; 
+  flex-shrink: 0;
+}
+
+.brand__logo { 
+  width: 28px; 
+  height: 28px; 
+  border-radius: 8px; 
+  background: linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%); 
+  flex-shrink: 0;
+}
+
+.brand__name { 
+  letter-spacing: 0.2px; 
+  white-space: nowrap;
+  font-size: 16px;
+}
+
+/* Navegación central */
+.nav { 
+  margin-left: auto; 
+  display: flex; 
+  gap: 8px; 
+  align-items: center; 
+  flex-shrink: 0;
+}
+
+.nav a { 
+  padding: 8px 12px; 
+  border-radius: var(--radius); 
+  color: inherit; 
+  text-decoration: none; 
+  transition: background 0.15s ease;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.nav a.active, 
+.nav a:hover { 
+  background: var(--accent); 
+  color: var(--accent-foreground); 
+}
+
+/* Header tools (botones derecha) */
+.header__tools { 
+  display: flex; 
+  gap: 8px; 
+  align-items: center; 
+  margin-left: 12px; 
+  flex-shrink: 0;
+}
+
+.theme-toggle { 
+  border: 1px solid var(--border); 
+  padding: 8px 10px; 
+  border-radius: var(--radius); 
+  background: var(--card); 
+  cursor: pointer; 
+  transition: all 0.2s ease;
+  font-size: 16px;
+}
+
+.theme-toggle:hover {
+  background: var(--accent);
+}
+
+/* Avatar y dropdown de perfil */
+.avatar { 
+  width: 32px; 
+  height: 32px; 
+  border-radius: 999px; 
+  object-fit: cover; 
+  border: 1px solid var(--border); 
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.avatar:hover {
+  transform: scale(1.05);
+}
+
+.profile-menu { 
+  position: relative; 
+}
+
+.profile-dropdown { 
+  position: absolute; 
+  right: 0; 
+  top: 40px; 
+  width: 220px; 
+  background: var(--card); 
+  border: 1px solid var(--border); 
+  border-radius: var(--radius); 
+  box-shadow: var(--shadow); 
+  opacity: 0; 
+  transform: translateY(-6px); 
+  pointer-events: none; 
+  transition: opacity 0.15s ease, transform 0.15s ease; 
+  z-index: 100;
+}
+
+.profile-dropdown.open { 
+  opacity: 1; 
+  transform: translateY(0); 
+  pointer-events: auto; 
+}
+
+.profile-dropdown a, 
+.profile-dropdown button { 
+  display: block; 
+  width: 100%; 
+  text-align: left; 
+  padding: 10px 12px; 
+  background: transparent; 
+  border: none; 
+  cursor: pointer;
+  transition: background 0.15s ease;
+  color: inherit;
+  text-decoration: none;
+}
+
+.profile-dropdown a:hover, 
+.profile-dropdown button:hover { 
+  background: var(--accent); 
+}
 
 /* Notifications dropdown */
-.notif-dd { position:absolute; right:54px; top: 44px; width: 320px; background: var(--card); border:1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); opacity:0; transform: translateY(-6px); pointer-events:none; transition: opacity .15s ease, transform .15s ease; }
-.notif-dd.open { opacity:1; transform: translateY(0); pointer-events:auto; }
-.notif-item { padding: 10px 12px; border-bottom:1px solid var(--border); }
-.notif-item:last-child { border-bottom:none; }
+.notif-dd { 
+  position: absolute; 
+  right: 54px; 
+  top: 44px; 
+  width: 320px; 
+  background: var(--card); 
+  border: 1px solid var(--border); 
+  border-radius: var(--radius); 
+  box-shadow: var(--shadow); 
+  opacity: 0; 
+  transform: translateY(-6px); 
+  pointer-events: none; 
+  transition: opacity 0.15s ease, transform 0.15s ease; 
+  z-index: 100;
+}
+
+.notif-dd.open { 
+  opacity: 1; 
+  transform: translateY(0); 
+  pointer-events: auto; 
+}
+
+.notif-item { 
+  padding: 10px 12px; 
+  border-bottom: 1px solid var(--border); 
+}
+
+.notif-item:last-child { 
+  border-bottom: none; 
+}
+
+/* Responsive nav (mobile) */
+.menu-btn { 
+  display: none; 
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .nav { 
+    display: none; 
+  }
+  
+  .menu-btn { 
+    display: inline-flex; 
+  }
+  
+  .header__inner {
+    padding: 12px 16px;
+  }
+  
+  .brand__name {
+    font-size: 14px;
+  }
+  
+  .header__tools {
+    margin-left: auto;
+  }
+}
+
+/* ============================================
+   FIN HEADER
+   ============================================ */
 
 /* Grid */
-.grid { display:grid; gap: 16px; grid-template-columns: repeat(12,1fr); }
-.col-3 { grid-column: span 3; } .col-4 { grid-column: span 4; } .col-6 { grid-column: span 6; } .col-8 { grid-column: span 8; } .col-12 { grid-column: span 12; }
-@media (max-width: 1024px){ .col-3, .col-4, .col-6, .col-8, .col-12 { grid-column: span 12; } }
-.stat { display:flex; align-items:center; justify-content:space-between; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(12,1fr); }
+.col-3 { grid-column: span 3; } 
+.col-4 { grid-column: span 4; } 
+.col-6 { grid-column: span 6; } 
+.col-8 { grid-column: span 8; } 
+.col-12 { grid-column: span 12; }
+
+@media (max-width: 1024px){ 
+  .col-3, .col-4, .col-6, .col-8, .col-12 { 
+    grid-column: span 12; 
+  } 
+}
+
+.stat { display: flex; align-items: center; justify-content: space-between; }
 .stat .kpi { font-size: 24px; font-weight: 800; }
 
 /* Pills / badges */
-.badge { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius: 999px; border:1px solid var(--border); background: var(--accent); font-size: 12px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--accent); font-size: 12px; }
 
 /* Lists */
-.list { display:grid; gap:10px; }
-.list-item { display:grid; grid-template-columns: 1fr auto; gap:10px; padding: 10px; border:1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.list { display: grid; gap: 10px; }
+.list-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
 
 /* Modal */
-.modal { position: fixed; inset: 0; display:none; align-items:center; justify-content:center; background: rgba(0,0,0,.35); }
-.modal.open { display:flex; }
-.modal .sheet { width: 100%; max-width: 720px; background: var(--card); border:1px solid var(--border); border-radius: var(--radius); box-shadow: 0 16px 48px rgba(0,0,0,.18); overflow:hidden; }
-.modal .sheet .head { padding: 14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+.modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.35); }
+.modal.open { display: flex; }
+.modal .sheet { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 16px 48px rgba(0,0,0,.18); overflow: hidden; }
+.modal .sheet .head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .modal .sheet .body { padding: 16px; }
 
 /* Calendar (mini) */
 .calendar { width: 100%; }
-.calendar .cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px; }
+.calendar .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .calendar .grid { grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.calendar .day { padding: 10px; border:1px solid var(--border); border-radius: 8px; text-align:center; }
+.calendar .day { padding: 10px; border: 1px solid var(--border); border-radius: 8px; text-align: center; }
 .calendar .day.has { background: var(--accent); }
 
 /* Organization modal overrides: center and scrollable */
 .modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.45); z-index: 3000; padding: 20px; }
 .modal.open { display: flex; }
-.modal .sheet { width: 100%; max-width: 720px; background: var(--card); border:1px solid var(--border); border-radius: var(--radius); box-shadow: 0 16px 48px rgba(0,0,0,.18); overflow: hidden; max-height: 90vh; display:flex; flex-direction:column; }
-.modal .sheet .head { padding: 12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background: transparent; }
-.modal .sheet .body { padding: 16px; overflow:auto; }
+.modal .sheet { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 16px 48px rgba(0,0,0,.18); overflow: hidden; max-height: 90vh; display: flex; flex-direction: column; }
+.modal .sheet .head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: transparent; }
+.modal .sheet .body { padding: 16px; overflow: auto; }
+
 @media (max-width: 640px) {
   .modal .sheet { width: 100%; margin: 0 12px; max-width: calc(100% - 24px); border-radius: 8px; }
   .modal .sheet .body { max-height: 75vh; }
 }
 
+/* ============================================
+   DASHBOARD DE SECRETARIA
+   ============================================ */
 
-/* Responsive nav (mobile) */
-.menu-btn { display:none; }
+.secretaria-dashboard {
+  width: 100%;
+}
+
+.secretaria-dashboard .card.stat.info {
+  border-left: 4px solid #2196F3;
+}
+
+.secretaria-dashboard .card.stat.warning {
+  border-left: 4px solid #FF9800;
+}
+
+.secretaria-dashboard .card.stat.success {
+  border-left: 4px solid #4CAF50;
+}
+
+.secretaria-dashboard .card.stat.danger {
+  border-left: 4px solid #F44336;
+}
+
+.btn-group {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.btn-group .btn {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.info-group {
+  margin-bottom: 12px;
+}
+
+.info-group label {
+  font-weight: 600;
+  color: #555;
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+}
+
+.info-group p {
+  margin: 0;
+  color: #333;
+  line-height: 1.5;
+}
+
+.instalaciones-list,
+.organizaciones-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.org-item {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #007bff;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.evento-info {
+  background: #f0f7ff;
+  padding: 16px;
+  border-radius: 8px;
+  border-left: 4px solid #007bff;
+  margin-bottom: 16px;
+}
+
+.evento-info h4 {
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.evento-info .muted {
+  font-size: 0.9rem;
+}
+
+.evento-review h3 {
+  color: #333;
+  margin-bottom: 16px;
+  font-size: 1.1rem;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 8px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.badge.primary {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.badge.secondary {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.badge.success {
+  background: #e8f5e9;
+  color: #388e3c;
+}
+
+.badge.danger {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.badge.warning {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+.mb-16 {
+  margin-bottom: 16px;
+}
+
+.mb-24 {
+  margin-bottom: 24px;
+}
+
+.gap-16 {
+  gap: 16px;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.justify-end {
+  justify-content: flex-end;
+}
+
+/* Responsivo para dashboard de secretaria */
 @media (max-width: 768px) {
-  .nav { display:none; }
-  .menu-btn { display:inline-flex; }
+  .btn-group {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .btn-group .btn {
+    width: 100%;
+    margin-bottom: 4px;
+  }
+  
+  .secretaria-dashboard .grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .evento-review .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mejoras para modales del dashboard de secretaria */
+#reviewModal .sheet,
+#evaluateModal .sheet {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+#reviewModal .body,
+#evaluateModal .body {
+  max-height: calc(90vh - 60px);
+  overflow-y: auto;
+}
+
+/* Estilos para formulario de evaluación */
+#evaluateForm .form-group {
+  margin-bottom: 16px;
+}
+
+#evaluateForm textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+#evaluateForm .flex {
+  display: flex;
+  gap: 12px;
+}
+
+/* Estados de los eventos en la tabla */
+.secretaria-dashboard tbody tr[data-evento-id] {
+  transition: background-color 0.2s ease;
+}
+
+.secretaria-dashboard tbody tr[data-evento-id]:hover {
+  background-color: rgba(0, 123, 255, 0.05);
+}
+
+/* Destacar eventos según estado */
+.secretaria-dashboard tbody tr[data-estado="registrado"] {
+  border-left: 3px solid #FF9800;
+}
+
+.secretaria-dashboard tbody tr[data-estado="aprobado"] {
+  border-left: 3px solid #4CAF50;
+}
+
+.secretaria-dashboard tbody tr[data-estado="rechazado"] {
+  border-left: 3px solid #F44336;
+}
+
+/* ============================================
+   MEJORAS ADICIONALES PARA MODALES
+   ============================================ */
+
+/* Asegurar que los modales se vean correctamente con !important para sobrescribir otros estilos */
+.modal.open {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Ajustar ancho máximo de los modales del dashboard de secretaria */
+#reviewModal .sheet,
+#evaluateModal .sheet {
+  max-width: 900px;
+}
+
+/* Mejorar visibilidad de los botones dentro de modales */
+#reviewModal .btn,
+#evaluateModal .btn {
+  transition: all 0.2s ease;
+}
+
+#reviewModal .btn:hover,
+#evaluateModal .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Estilos adicionales para badges dentro de modales */
+#reviewModal .badge,
+#evaluateModal .badge {
+  font-size: 0.85rem;
+  padding: 6px 10px;
+}
+
+/* Mejorar legibilidad de info-groups en modales */
+#reviewModal .info-group label,
+#evaluateModal .info-group label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+}
+
+#reviewModal .info-group p,
+#evaluateModal .info-group p {
+  font-size: 1rem;
+  color: #222;
+}
+
+/* Asegurar que los formularios dentro de modales sean legibles */
+#evaluateForm .form-group label {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+#evaluateForm .textarea,
+#evaluateForm .input {
+  border: 1px solid #ddd;
+  transition: border-color 0.2s ease;
+}
+
+#evaluateForm .textarea:focus,
+#evaluateForm .input:focus {
+  border-color: #007bff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+/* Espaciado entre secciones del modal de revisión */
+#reviewModalContent .mt-16 {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* Mejorar visibilidad del título de secciones */
+#reviewModalContent h3 {
+  color: #2c3e50;
+  font-weight: 700;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Backdrop del modal más visible */
+.modal {
+  background: rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(2px);
+}
+
+/* Animación suave al abrir modales */
+.modal.open .sheet {
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Responsivo para modales en móviles */
+@media (max-width: 768px) {
+  #reviewModal .sheet,
+  #evaluateModal .sheet {
+    max-width: 95vw;
+    margin: 0 10px;
+  }
+  
+  #reviewModal .body,
+  #evaluateModal .body {
+    padding: 12px;
+  }
+  
+  #reviewModalContent h3 {
+    font-size: 1rem;
+  }
+  
+  .btn-group {
+    flex-direction: column;
+  }
+  
+  .btn-group .btn {
+    width: 100%;
+  }
+}
+
+/* ============================================
+   ESTILOS PARA VISUALIZACIÓN DE DOCUMENTOS Y DETALLES
+   ============================================ */
+
+/* Mejoras para visualización de documentos */
+.documento-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  border-left: 3px solid #007bff;
+  transition: all 0.2s ease;
+}
+
+.documento-item:hover {
+  background: #e9ecef;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.documento-item strong {
+  color: #2c3e50;
+  font-size: 0.95rem;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.documento-item .muted {
+  font-size: 0.85rem;
+  margin-top: 4px;
+  color: #6c757d;
+}
+
+.documento-item .btn {
+  flex-shrink: 0;
+  font-weight: 600;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
+/* Enlaces mejorados para email y teléfono */
+.info-group a {
+  color: #007bff;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.info-group a:hover {
+  color: #0056b3;
+  text-decoration: underline;
+}
+
+/* Descripción con formato de texto preservado */
+.info-group p[style*="white-space"] {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #e0e0e0;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  color: #495057;
+}
+
+/* Estilos para capacidad y ubicación destacados */
+.evento-review .info-group p strong {
+  color: #2c3e50;
+  font-weight: 700;
+}
+
+/* Separador visual mejorado */
+.evento-review .mt-16 {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 2px solid #f0f0f0;
+}
+
+/* Estilos para badges de estado */
+.evento-review .badge.warning {
+  background: #fff3e0;
+  color: #f57c00;
+  font-weight: 600;
+  padding: 6px 12px;
+}
+
+/* Contenedor de estado del evento */
+.evento-review [style*="background: #f8f9fa"] {
+  background: #f8f9fa !important;
+  padding: 12px !important;
+  border-radius: 6px !important;
+  border-left: 3px solid #6c757d !important;
+}
+
+/* Mejora de instalaciones */
+.instalaciones-list .badge {
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+
+/* Estilo para secciones sin información */
+.info-group .muted {
+  font-style: italic;
+  color: #6c757d;
+}
+
+/* Mejora del grid en el modal de revisión */
+#reviewModalContent .grid {
+  margin-bottom: 16px;
+}
+
+#reviewModalContent .col-6 {
+  padding: 8px;
+}
+
+/* Animación para hover en documento-item */
+.documento-item .btn {
+  transition: all 0.3s ease;
+}
+
+.documento-item .btn:hover {
+  transform: translateX(2px);
+}
+
+/* Mejora de títulos de sección */
+#reviewModalContent h3 {
+  color: #2c3e50;
+  font-weight: 700;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.15rem;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e9ecef;
+}
+
+/* Responsive para documentos */
+@media (max-width: 768px) {
+  .documento-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .documento-item .btn {
+    width: 100%;
+    text-align: center;
+  }
 }

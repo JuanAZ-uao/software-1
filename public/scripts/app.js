@@ -1,65 +1,85 @@
 // app.js
 import { initRouter, navigateTo } from './utils/router.js';
-import { subscribe, initState, setState } from './utils/state.js';
+import { subscribe, initState, setState, getState } from './utils/state.js';
 import { qs, ensureTheme } from './utils/helpers.js';
 import { renderHeader } from './components/header.js';
 import { renderDashboard } from './components/dashboard.js';
+import { renderDashboardSecretaria, bindDashboardSecretariaEvents } from './components/dashboardSecretaria.js';
 import { renderProfile } from './components/profile.js';
+import { renderOrganizations } from './components/organizations.js';
 import { renderEvents } from './components/events.js';
 import { renderUsers } from './components/users.js';
 import { renderCalendar } from './components/calendar.js';
 import { renderNotifications } from './components/notifications.js';
 import { renderSettings } from './components/settings.js';
-import { renderMyEvents, bindMyEventsListeners } from './components/MyEvents.js';
-import { renderAuthView, isAuthenticated, bindAuthEvents, handleResetPasswordPage } from './auth.js';
+import { renderAuthView, isAuthenticated, bindAuthEvents, handleResetPasswordPage, getCurrentUser } from './auth.js';
+
 
 const mount = document.getElementById('app');
 
 function renderShell(children) {
   return `
-    <header class="header">
-      <div class="container header__inner" id="header-slot"></div>
-    </header>
-    <main class="container view-enter" id="view">${children || ''}</main>
-    <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <div id="modal" class="modal">
-      <div class="sheet">
-        <div class="head">
-          <div id="modal-title"></div>
-          <button class="btn small" id="modal-close">Cerrar</button>
-        </div>
-        <div class="body" id="modal-body"></div>
-      </div>
-    </div>
-    <div id="notif-dd" class="notif-dd"></div>
+    <div id="header-slot"></div>
+    <main class="container">
+      ${children}
+    </main>
+    <div id="toast" class="toast"></div>
   `;
 }
 
 export async function loadInitialData() {
   try {
-    const [eventsRes, orgsRes, instRes, notifRes] = await Promise.all([
-      fetch('/api/events'),
-      fetch('/api/organizations'),
-      fetch('/api/installations'),
-      fetch('/api/notifications')
+    console.log('📦 Cargando datos iniciales...');
+    
+    const user = getCurrentUser();
+    const isSecretaria = user?.tipo === 'secretaria';
+    
+    // Si es secretaria, cargar eventos para evaluación
+    const eventsEndpoint = isSecretaria ? '/api/events/for-secretaria' : '/api/events';
+    
+    const [eventsRes, installationsRes, orgsRes, facultadesRes, programasRes] = await Promise.all([
+      fetch(eventsEndpoint).catch(() => ({ ok: false })),
+      fetch('/api/installations').catch(() => ({ ok: false })),
+      fetch('/api/organizations').catch(() => ({ ok: false })),
+      fetch('/api/facultades').catch(() => ({ ok: false })),
+      fetch('/api/programas').catch(() => ({ ok: false }))
     ]);
 
-    const [events, organizations, installations, notifications] = await Promise.all([
-      eventsRes.ok ? eventsRes.json() : [],
-      orgsRes.ok ? orgsRes.json() : [],
-      instRes.ok ? instRes.json() : [],
-      notifRes.ok ? notifRes.json() : []
-    ]);
+    const st = getState();
+    
+    if (eventsRes.ok) {
+      const events = await eventsRes.json();
+      console.log('✅ Eventos cargados:', events.length);
+      setState({ ...st, events });
+    }
 
-    setState({
-      events: Array.isArray(events) ? events : [],
-      organizations: Array.isArray(organizations) ? organizations : [],
-      installations: Array.isArray(installations) ? installations : [],
-      notifications: Array.isArray(notifications) ? notifications : []
-    });
-  } catch (err) {
-    console.error('Error al cargar datos iniciales:', err);
-    setState({ events: [], organizations: [], installations: [], notifications: [] });
+    if (installationsRes.ok) {
+      const installations = await installationsRes.json();
+      console.log('✅ Instalaciones cargadas:', installations.length);
+      setState({ ...getState(), installations });
+    }
+
+    if (orgsRes.ok) {
+      const orgs = await orgsRes.json();
+      console.log('✅ Organizaciones cargadas:', orgs.length);
+      setState({ ...getState(), organizations: orgs });
+    }
+
+    if (facultadesRes.ok) {
+      const facultades = await facultadesRes.json();
+      console.log('✅ Facultades cargadas:', facultades.length);
+      setState({ ...getState(), facultades });
+    }
+
+    if (programasRes.ok) {
+      const programas = await programasRes.json();
+      console.log('✅ Programas cargados:', programas.length);
+      setState({ ...getState(), programas });
+    }
+
+    console.log('✅ Datos iniciales cargados correctamente');
+  } catch (error) {
+    console.error('❌ Error cargando datos iniciales:', error);
   }
 }
 
@@ -83,65 +103,100 @@ async function renderRoute(route) {
       bindAuthEvents();
       return;
 
-    case 'dashboard': view = renderDashboard(); break;
-    case 'profile': view = renderProfile(); break;
-    case 'organizations': view = await renderOrganizations(); break;
-    case 'events': view = await renderEvents(); break;
-    case 'my-events': view = renderMyEvents(); break;
-    case 'users': view = renderUsers(); break;
-    case 'calendar': view = renderCalendar(); break;
-    case 'notifications': view = renderNotifications(); break;
-    case 'settings': view = renderSettings(); break;
-    default: view = renderDashboard(); break;
+    case 'dashboard': {
+      // Detectar rol del usuario y renderizar dashboard correspondiente
+      const user = getCurrentUser();
+      console.log('🔍 Usuario detectado:', user);
+      
+      if (user?.tipo === 'secretaria') {
+        console.log('✅ Renderizando dashboard de SECRETARIA');
+        view = renderDashboardSecretaria();
+        mount.innerHTML = renderShell(view);
+        const headerSlot = qs('#header-slot');
+        if (headerSlot) headerSlot.innerHTML = renderHeader();
+        bindDashboardSecretariaEvents();
+        return;
+      } else {
+        console.log('✅ Renderizando dashboard DEFAULT');
+        view = renderDashboard();
+      }
+      break;
+    }
+      
+    case 'profile': 
+      view = renderProfile(); 
+      break;
+    
+    case 'my-events': {
+      // ✅ Renderizar Mis Eventos
+      console.log('✅ Renderizando Mis Eventos');
+      const { renderMyEvents, bindMyEventsListeners } = await import('./components/MyEvents.js');
+      view = renderMyEvents();
+      mount.innerHTML = renderShell(view);
+      const headerSlot = qs('#header-slot');
+      if (headerSlot) headerSlot.innerHTML = renderHeader();
+      bindMyEventsListeners();
+      return;
+    }
+    
+    case 'organizations': 
+      view = await renderOrganizations(); 
+      break;
+    
+    case 'events': 
+      view = await renderEvents(); 
+      break;
+    
+    case 'users': 
+      view = renderUsers(); 
+      break;
+    
+    case 'calendar': 
+      view = renderCalendar(); 
+      break;
+    
+    case 'notifications': 
+      view = renderNotifications(); 
+      break;
+    
+    case 'settings': 
+      view = renderSettings(); 
+      break;
+    
+    default: {
+      // Default también respeta el rol
+      const defaultUser = getCurrentUser();
+      console.log('🔍 Usuario en default:', defaultUser);
+      
+      if (defaultUser?.tipo === 'secretaria') {
+        console.log('✅ Renderizando dashboard de SECRETARIA (default)');
+        view = renderDashboardSecretaria();
+        mount.innerHTML = renderShell(view);
+        const headerSlot = qs('#header-slot');
+        if (headerSlot) headerSlot.innerHTML = renderHeader();
+        bindDashboardSecretariaEvents();
+        return;
+      } else {
+        console.log('✅ Renderizando dashboard DEFAULT (default)');
+        view = renderDashboard();
+      }
+      break;
+    }
   }
 
   mount.innerHTML = renderShell(view);
-
-  // Enlazar listeners específicos por vista
-  if (route === 'my-events') bindMyEventsListeners();
-
   const headerSlot = qs('#header-slot');
   if (headerSlot) headerSlot.innerHTML = renderHeader();
 }
 
-function bindGlobalUI() {
-  document.addEventListener('click', (e) => {
-    if (e.target?.id === 'modal-close' || e.target?.id === 'modal') {
-      qs('#modal').classList.remove('open');
-    }
-  });
-}
-
-async function main() {
-  initState();
+(async function init() {
   ensureTheme();
+  initState();
 
-  // NUEVO: Verificar si estamos en reset-password antes de cargar datos
-  if (window.location.pathname === '/reset-password') {
-    const handled = handleResetPasswordPage();
-    if (handled) return;
+  if (isAuthenticated()) {
+    await loadInitialData();
   }
 
-  // Inicializar router primero
-  initRouter(async (route) => {
-    if (isAuthenticated()) {
-      await loadInitialData();
-    }
-
-    renderRoute(route).catch(err => {
-      console.error('Error rendering route:', err);
-      navigateTo('dashboard');
-    });
-  });
-
-  bindGlobalUI();
-
-  subscribe(() => {
-    const header = qs('#header-slot');
-    if (header && isAuthenticated()) {
-      header.innerHTML = renderHeader();
-    }
-  });
-}
-
-main();
+  initRouter(renderRoute);
+  subscribe(() => console.log('State updated:', getState()));
+})();

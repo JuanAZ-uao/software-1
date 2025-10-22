@@ -55,10 +55,55 @@ export async function insert(evento, conn) {
 }
 
 export async function findById(id) {
-  const [rows] = await pool.query('SELECT * FROM evento WHERE idEvento = ? LIMIT 1', [id]);
-  return rows[0] || null;
+  const [rows] = await pool.query(`
+    SELECT 
+      e.*,
+      u.nombre as organizadorNombre,
+      u.apellidos as organizadorApellidos,
+      u.email as organizadorEmail,
+      u.telefono as organizadorTelefono,
+      a.avalPdf,
+      a.tipoAval,
+      GROUP_CONCAT(DISTINCT i.nombre) as instalacionesNombres,
+      GROUP_CONCAT(DISTINCT i.idInstalacion) as instalacionesIds
+    FROM evento e
+    LEFT JOIN usuario u ON e.idUsuario = u.idUsuario
+    LEFT JOIN evento_instalacion ei ON e.idEvento = ei.idEvento
+    LEFT JOIN instalacion i ON ei.idInstalacion = i.idInstalacion
+    LEFT JOIN aval a ON e.idEvento = a.idEvento AND a.principal = 1
+    WHERE e.idEvento = ?
+    GROUP BY e.idEvento, a.avalPdf, a.tipoAval
+    LIMIT 1
+  `, [id]);
+  
+  if (rows.length === 0) return null;
+  
+  const evento = rows[0];
+  
+  // Procesar y retornar evento con todos los campos
+  return {
+    ...evento,
+    // Asegurar que todos los campos estén presentes
+    nombre: evento.nombre || '',
+    tipo: evento.tipo || '',
+    fecha: evento.fecha || '',
+    hora: evento.hora || '',
+    horaFin: evento.horaFin || '',
+    capacidad: evento.capacidad || null,
+    ubicacion: evento.ubicacion || '',
+    descripcion: evento.descripcion || '',
+    avalPdf: evento.avalPdf || null,
+    tipoAval: evento.tipoAval || null,
+    organizadorNombre: `${evento.organizadorNombre || ''} ${evento.organizadorApellidos || ''}`.trim(),
+    organizadorEmail: evento.organizadorEmail || '',
+    organizadorTelefono: evento.organizadorTelefono || '',
+    instalaciones: evento.instalacionesNombres ? 
+      evento.instalacionesNombres.split(',').map((nombre, idx) => ({
+        nombre: nombre.trim(),
+        idInstalacion: evento.instalacionesIds?.split(',')[idx]
+      })) : []
+  };
 }
-
 export async function findAll() {
   const [rows] = await pool.query('SELECT * FROM evento ORDER BY idEvento DESC');
   return rows;
@@ -133,3 +178,47 @@ export async function attachGeneralCertificate(idEvento, { certificadoParticipac
   return rows[0] || null;
 }
   
+
+// ============================================
+// NUEVA FUNCIÓN PARA DASHBOARD DE SECRETARIAS
+// ============================================
+
+/**
+ * Obtiene todos los eventos con detalles del organizador para el dashboard de secretarias
+ * Incluye: nombre organizador, email, teléfono, instalaciones, aval
+ */
+export async function getAllEventsWithDetails() {
+  const [rows] = await pool.query(`
+    SELECT 
+      e.*,
+      u.nombre as organizadorNombre,
+      u.apellidos as organizadorApellidos,
+      u.email as organizadorEmail,
+      u.telefono as organizadorTelefono,
+      a.avalPdf,
+      a.tipoAval,
+      GROUP_CONCAT(DISTINCT i.nombre) as instalacionesNombres
+    FROM evento e
+    LEFT JOIN usuario u ON e.idUsuario = u.idUsuario
+    LEFT JOIN evento_instalacion ei ON e.idEvento = ei.idEvento
+    LEFT JOIN instalacion i ON ei.idInstalacion = i.idInstalacion
+    LEFT JOIN aval a ON e.idEvento = a.idEvento AND a.principal = 1
+    GROUP BY e.idEvento, a.avalPdf, a.tipoAval
+    ORDER BY e.fecha DESC, e.hora DESC
+  `);
+  
+  // Procesar instalaciones y formatear datos
+  return rows.map(row => ({
+    ...row,
+    capacidad: row.capacidad || null,
+    ubicacion: row.ubicacion || '',
+    descripcion: row.descripcion || '',
+    avalPdf: row.avalPdf || null,
+    tipoAval: row.tipoAval || null,
+    organizadorNombre: `${row.organizadorNombre || ''} ${row.organizadorApellidos || ''}`.trim(),
+    organizadorEmail: row.organizadorEmail || '',
+    organizadorTelefono: row.organizadorTelefono || '',
+    instalaciones: row.instalacionesNombres ? 
+      row.instalacionesNombres.split(',').map(nombre => ({ nombre: nombre.trim() })) : []
+  }));
+}

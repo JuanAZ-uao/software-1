@@ -19,6 +19,48 @@ export async function getAll(req, res) {
   }
 }
 
+
+// NUEVO: Endpoint específico para secretarias
+export async function getEventsForSecretaria(req, res) {
+  try {
+    const list = await svc.getEventsForSecretaria();
+    res.json(list);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error obteniendo eventos para secretaria' });
+  }
+}
+
+// NUEVO: Endpoint para evaluar eventos (aprobar/rechazar)
+export async function evaluateEvent(req, res) {
+  try {
+    const filesDict = mapFilesArrayToDict(req.files || []);
+    const { idEvento, estado, justificacion } = req.body;
+    const actaFile = filesDict['actaAprobacion'] ? filesDict['actaAprobacion'][0] : null;
+    
+    // Obtener ID de la secretaria desde el token o sesión
+    const idSecretaria = req.user?.id || req.body.idSecretaria;
+    
+    if (!idSecretaria) {
+      return res.status(401).json({ error: 'Secretaria no identificada' });
+    }
+    
+    const result = await svc.evaluateEvent({
+      idEvento,
+      estado,
+      justificacion,
+      actaFile,
+      idSecretaria
+    });
+    
+    res.json(result);
+  } catch (err) {
+    console.error('Error evaluating event:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Error evaluando evento' });
+  }
+}
+
+
 export async function getById(req, res) {
   try {
     const ev = await svc.getEventById(req.params.id);

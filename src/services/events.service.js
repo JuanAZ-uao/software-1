@@ -5,6 +5,8 @@ import * as instRepo from '../repositories/installations.repository.js';
 import * as avalService from './aval.service.js';
 import * as orgEventService from './organizationEvent.service.js';
 import * as instEventSvc from './eventInstallation.service.js';
+import * as evaluacionRepo from '../repositories/evaluacion.repository.js'; // NUEVO
+import * as eventsRepo from '../repositories/events.repository.js'; // NUEVO
 import fs from 'fs';
 import path from 'path';
 
@@ -267,4 +269,120 @@ export async function getEventById(id) {
 }
 export async function deleteEvent(id) {
   return await repo.deleteById(id);
+}
+
+
+// ============================================
+// NUEVAS FUNCIONES PARA DASHBOARD DE SECRETARIAS
+// ============================================
+
+/**
+ * Obtiene eventos específicamente para secretarias académicas
+ * Incluye información del organizador y estado actual
+ */
+export async function getEventsForSecretaria() {
+  try {
+    const eventos = await eventsRepo.getAllEventsWithDetails();
+    return eventos;
+  } catch (error) {
+    console.error('Error getting events for secretaria:', error);
+    throw error;
+  }
+}
+
+/**
+ * Evalúa un evento (aprobar/rechazar)
+ */
+export async function evaluateEvent({ idEvento, estado, justificacion, actaFile, idSecretaria }) {
+  const connection = await pool.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    // Verificar que el evento existe y está en estado 'registrado'
+    const [eventoRows] = await connection.execute(
+      'SELECT * FROM evento WHERE idEvento = ?',
+      [idEvento]
+    );
+    
+    if (eventoRows.length === 0) {
+      throw new Error('Evento no encontrado');
+    }
+    
+    const evento = eventoRows[0];
+    
+    // Permitir evaluar eventos en estado 'registrado' o sin estado (null)
+    const estadoActual = evento.estado || 'registrado';
+    if (estadoActual !== 'registrado' && evento.estado !== null) {
+      throw new Error(`El evento ya ha sido evaluado (estado actual: ${evento.estado})`);
+    }
+    
+    // Verificar que el usuario es una secretaria
+    const [secretariaRows] = await connection.execute(
+      'SELECT idUsuario FROM secretariaAcademica WHERE idUsuario = ?',
+      [idSecretaria]
+    );
+    
+    if (secretariaRows.length === 0) {
+      throw new Error('Usuario no autorizado para evaluar eventos');
+    }
+    
+    let actaPath = null;
+    
+    // Si se aprueba y hay archivo de acta, guardarlo
+    if (estado === 'aprobado' && actaFile) {
+      const uploadsDir = path.resolve(process.cwd(), 'uploads', 'actas');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      const fileName = `acta_${idEvento}_${Date.now()}.pdf`;
+      const destPath = path.join(uploadsDir, fileName);
+      
+      // Mover archivo
+      fs.renameSync(actaFile.path, destPath);
+      actaPath = `/uploads/actas/${fileName}`;
+    }
+    
+    // Actualizar estado del evento
+    // Mapear estado a valores válidos de la BD (solo 'aprobado' o 'rechazado')
+    const estadoValido = estado === 'aprobado' ? 'aprobado' : 'rechazado';
+    
+    await connection.execute(
+      'UPDATE evento SET estado = ? WHERE idEvento = ?',
+      [estadoValido, idEvento]
+    );
+    
+    // Crear evaluación
+    await connection.execute(
+      `INSERT INTO evaluacion (estado, fechaEvaluacion, justificacion, actaAprobacion, idEvento, idSecretaria) 
+       VALUES (?, CURDATE(), ?, ?, ?, ?)`,
+      [estado, justificacion, actaPath, idEvento, idSecretaria]
+    );
+    
+    await connection.commit();
+    
+    return {
+      success: true,
+      message: `Evento ${estado} exitosamente`,
+      evento: {
+        ...evento,
+        estado,
+        evaluacion: {
+          estado,
+          justificacion,
+          actaAprobacion: actaPath,
+          fechaEvaluacion: new Date().toISOString().split('T')[0],
+          idSecretaria
+        }
+      }
+    };
+    
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error evaluating event:', error);
+    throw error;
+  } finally {
+    connection.release();
+  }
 }

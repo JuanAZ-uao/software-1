@@ -9,34 +9,49 @@ export function renderHeader() {
   const { notifications = [] } = getState();
   const unread = Array.isArray(notifications) ? notifications.filter(n => !n.read).length : 0;
 
+
+  // ✅ CAMBIO: Estructura completa del header con .header y .header__inner
   return `
-    <div class="brand">
-      <div class="brand__logo"></div>
-      <div class="brand__name">Universidad Connect</div>
-    </div>
-    <nav class="nav" id="main-nav">
-      <a href="#dashboard">Dashboard</a>
-      <a href="#events">Eventos</a>
-      <a href="#my-events">Mis Eventos</a>
-      <a href="#calendar">Calendario</a>
-    </nav>
-    <div class="header__tools">
-      <button id="themeToggle" class="theme-toggle" title="Tema">🌓</button>
-      <div style="position:relative;">
-        <button title="Notificaciones" class="badge" id="notifBtn">🔔 <span id="notif-count">${unread}</span></button>
-      </div>
-      <div class="profile-menu">
-        <img class="avatar" src="${user?.avatar || 'https://images.unsplash.com/photo-1494790108755-2616b612b372?w=64'}" alt="avatar">
-        <div class="profile-dropdown" id="profile-dd">
-          <a href="#profile">Ver perfil</a>
-          <a href="#settings">Configuración</a>
-          <button id="logoutBtn">Cerrar sesión</button>
+    <div class="header">
+      <div class="header__inner">
+        <div class="brand">
+          <div class="brand__logo"></div>
+          <div class="brand__name">Universidad Connect</div>
+        </div>
+        
+        <nav class="nav" id="main-nav">
+          <a href="#dashboard">Dashboard</a>
+          <a href="#events">Eventos</a>
+          <a href="#my-events">Mis Eventos</a>
+          <a href="#calendar">Calendario</a>
+        </nav>
+        
+        <div class="header__tools">
+          <button id="themeToggle" class="theme-toggle" title="Tema">🌓</button>
+          
+          <div style="position:relative;">
+            <button title="Notificaciones" class="badge" id="notifBtn">🔔 <span id="notif-count">${unread}</span></button>
+            <div class="notif-dd" id="notif-dd">
+              <!-- Notificaciones se cargan dinámicamente -->
+            </div>
+          </div>
+          
+          <div class="profile-menu">
+            <img class="avatar" src="${user?.avatar || 'https://images.unsplash.com/photo-1494790108755-2616b612b372?w=64'}" alt="avatar">
+            <div class="profile-dropdown" id="profile-dd">
+              <a href="#profile">👤 Ver perfil</a>
+              <a href="#settings">⚙️ Configuración</a>
+              <button id="logoutBtn">🚪 Cerrar sesión</button>
+            </div>
+          </div>
+          
+          <button class="menu-btn btn" id="menuBtn">☰</button>
         </div>
       </div>
-      <button class="menu-btn btn" id="menuBtn">☰</button>
     </div>
   `;
 }
+
 
 document.addEventListener('click', (e) => {
   const avatar = e.target.closest('.avatar');
