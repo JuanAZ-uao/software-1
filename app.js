@@ -15,6 +15,8 @@ import { installationsRouter } from './src/routes/installations.routes.js';
 import { eventsRouter } from './src/routes/events.routes.js';
 import { organizationEventRouter } from './src/routes/organizationEvent.routes.js';
 import {documentoRoutes} from './src/routes/documento.routes.js';
+import { avalRouter } from './src/routes/aval.routes.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -91,13 +93,9 @@ export const createApp = () => {
   app.use('/api/organizations', organizationsRouter);
   app.use('/api/installations', installationsRouter);
   app.use('/api/events', eventsRouter);
-
-  // Mount the organization-event router under the singular prefix expected by frontend
+  app.use('/api/aval', avalRouter);
   app.use('/api/organization-event', organizationEventRouter);
-
-  // keep /api/documentos mounted before not-found handler
   app.use('/api/documentos', documentoRoutes);
-
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
   app.use('/api', apiNotFoundHandler);
 

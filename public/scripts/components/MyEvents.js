@@ -6,7 +6,7 @@ import { navigateTo } from '../utils/router.js';
 
 let _isSubmittingEdit = false;
 
-function escapeHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 function toDateInputValue(raw) {
   if (!raw) return '';
@@ -28,29 +28,31 @@ export function renderMyEvents() {
 
   const rows = myEvents.length
     ? myEvents.map(ev => {
-        const id = ev.idEvento || ev.id;
-        const nombre = ev.nombre || '';
-        const tipo = ev.tipo || '';
-        const fecha = ev.fecha || '';
-        const hora = ev.hora || '';
-        const estado = ev.estado || '';
-        const editable = estado === 'registrado';
-        return `
+      const id = ev.idEvento || ev.id;
+      const nombre = ev.nombre || '';
+      const tipo = ev.tipo || '';
+      const fecha = ev.fecha || '';
+      const hora = ev.hora || '';
+      const estado = ev.estado || '';
+      const ubicacion = ev.ubicacion || '';
+      const editable = estado === 'registrado';
+      return `
           <tr data-id="${escapeHtml(id)}">
             <td>${escapeHtml(nombre)}</td>
             <td>${escapeHtml(tipo)}</td>
             <td>${escapeHtml(fecha)} ${escapeHtml(hora)}</td>
+            <td>${escapeHtml(ubicacion)}</td>
             <td>${escapeHtml(estado)}</td>
             <td>
               ${editable
-                ? `<button class="btn small" data-edit="${escapeHtml(id)}">Editar</button>
+          ? `<button class="btn small" data-edit="${escapeHtml(id)}">Editar</button>
                    <button class="btn small danger" data-delete="${escapeHtml(id)}">Eliminar</button>`
-                : `<span class="muted">No editable</span>`}
+          : `<span class="muted">No editable</span>`}
             </td>
           </tr>
         `;
-      }).join('')
-    : '<tr><td colspan="5">No has creado eventos aún</td></tr>';
+    }).join('')
+    : '<tr><td colspan="6">No has creado eventos aún</td></tr>';
 
   return `
     <div class="card">
@@ -62,6 +64,7 @@ export function renderMyEvents() {
               <th>Nombre</th>
               <th>Tipo</th>
               <th>Fecha</th>
+              <th>Ubicación</th>
               <th>Estado</th>
               <th>Acciones</th>
             </tr>
@@ -118,6 +121,26 @@ export function renderMyEvents() {
               <div id="editOrgList" style="max-height:320px; overflow:auto; border:1px solid #ddd; padding:6px;"></div>
             </div>
 
+            <div id="editAvalBlock" style="margin-top:12px; border-top:1px dashed #eee; padding-top:12px;">
+              <label class="label">Aval del evento</label>
+              <div id="avalExistingWrap" style="margin-bottom:8px;"></div>
+            <div id="avalDeleteWrap" style="margin-bottom:8px;"></div>
+
+            <div style="margin-top:8px;">
+            <label class="label">Tipo de aval</label>
+            <select id="tipoAvalSelect" name="tipoAval" class="select">
+              <option value="">-- seleccionar --</option>
+              <option value="director_programa">Director de Programa</option>
+              <option value="director_docencia">Director de Docencia</option>
+            </select>
+            </div>
+
+            <div id="avalFileWrap" style="margin-top:8px;">
+            <label style="font-size:0.9em;">Subir aval (PDF)</label>
+            <input type="file" accept="application/pdf" id="avalFileInput" name="avalPdf" />
+            </div>
+            </div>
+
             <div class="flex-row" style="gap:8px;">
               <button type="submit" class="btn primary" id="evtEditSubmitBtn">Guardar cambios</button>
               <button type="button" class="btn" id="evtEditCancelBtn">Cancelar</button>
@@ -141,16 +164,16 @@ export function bindMyEventsListeners() {
     const deleteBtn = e.target.closest('[data-delete]');
     if (deleteBtn) {
       const id = deleteBtn.getAttribute('data-delete');
-      if (!confirm('¿Eliminar este evento? Esta acción no se puede deshacer.')) return;
+      if (!confirm('¿Eliminar este evento?')) return;
       try {
         const res = await fetch(`/api/events/${id}`, { method: 'DELETE' });
         const body = await res.json();
         if (!res.ok) { toast(body.error || 'Error eliminando evento', 'error'); return; }
-        toast('Evento eliminado correctamente', 'success');
+        toast('Evento eliminado', 'success');
         const updatedEvents = getState().events.filter(ev => String(ev.idEvento || ev.id) !== String(id));
         setState({ ...getState(), events: updatedEvents });
       } catch (err) {
-        console.error('Error eliminando evento:', err); toast('Error eliminando evento', 'error');
+        console.error(err); toast('Error eliminando evento', 'error');
       }
       return;
     }
@@ -174,15 +197,6 @@ export function bindMyEventsListeners() {
       return;
     }
 
-    // toggle cert delete checkbox shows/hides file input
-    if (e.target && e.target.classList && e.target.classList.contains('cert-delete')) {
-      const orgId = e.target.getAttribute('data-org');
-      const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${escapeHtml(orgId)}"]`);
-      if (fileWrap) fileWrap.style.display = e.target.checked ? '' : 'none';
-      return;
-    }
-
-    // toggle org-select shows/hides cert block area
     if (e.target && e.target.classList && e.target.classList.contains('org-select')) {
       const orgId = e.target.value;
       const certBlock = document.querySelector(`#editOrgList [data-cert-block="${escapeHtml(orgId)}"]`);
@@ -190,13 +204,22 @@ export function bindMyEventsListeners() {
       return;
     }
 
-    // org-rep checkbox handler: hide/show encargado and preserve value
     if (e.target && e.target.classList && e.target.classList.contains('org-rep')) {
       const orgId = e.target.getAttribute('data-org');
       const enc = document.querySelector(`#editOrgList .org-encargado[data-org="${escapeHtml(orgId)}"]`);
       if (!enc) return;
       if (e.target.checked) { enc.setAttribute('data-prev', enc.value || ''); enc.value = ''; enc.style.display = 'none'; }
       else { enc.value = enc.getAttribute('data-prev') || ''; enc.style.display = ''; }
+      return;
+    }
+
+    // handle aval delete checkbox toggle (shows/hides file input)
+    if (e.target && e.target.classList && e.target.classList.contains('aval-delete')) {
+      const chk = e.target.checked;
+      const fileWrap = document.getElementById('avalFileWrap');
+      const deleteHiddenInput = document.querySelector('input[name="delete_aval"]');
+      if (fileWrap) fileWrap.style.display = chk ? '' : 'none';
+      if (deleteHiddenInput) deleteHiddenInput.value = chk ? '1' : '0';
       return;
     }
   });
@@ -228,10 +251,10 @@ async function openEventEditModal(id) {
 
     const st = getState();
     if (!Array.isArray(st.installations) || st.installations.length === 0) {
-      try { const rInst = await fetch('/api/installations'); const instData = await rInst.json(); setState({ ...getState(), installations: Array.isArray(instData) ? instData : [] }); } catch {}
+      try { const rInst = await fetch('/api/installations'); setState({ ...getState(), installations: await rInst.json() || [] }); } catch { }
     }
     if (!Array.isArray(st.organizations) || st.organizations.length === 0) {
-      try { const rOrg = await fetch('/api/organizations'); const orgData = await rOrg.json(); setState({ ...getState(), organizations: Array.isArray(orgData) ? orgData : [] }); } catch {}
+      try { const rOrg = await fetch('/api/organizations'); setState({ ...getState(), organizations: await rOrg.json() || [] }); } catch { }
     }
 
     const rAssoc = await fetch(`/api/organization-event/event/${id}`);
@@ -262,7 +285,7 @@ async function openEventEditModal(id) {
       return `<div style="padding:4px 0;"><label><input type="checkbox" class="inst-checkbox" name="instalaciones" value="${escapeHtml(iid)}" ${checked ? 'checked' : ''}> ${label}</label></div>`;
     }).join('');
 
-    // map associations by org id (assoc rows include certificadoParticipacion, participante, esRepresentanteLegal, org data)
+    // map associations by org id
     const assocMap = {};
     (assocList || []).forEach(a => {
       const key = String(a.idOrganizacion || (a.org && a.org.idOrganizacion) || a.org_idOrganizacion || '');
@@ -291,23 +314,16 @@ async function openEventEditModal(id) {
         rep = (val === true) || String(val).toLowerCase() === 'si' || String(val).toLowerCase() === 'true';
       }
 
-      // participante value if exists on assoc
       const participanteVal = lookup ? (lookup.participante || '') : '';
 
-      // certificado path normalization
       let certificadoPath = lookup ? (lookup.certificadoParticipacion || null) : null;
       if (certificadoPath && !certificadoPath.startsWith('/')) {
         if (certificadoPath.startsWith('uploads/')) certificadoPath = '/' + certificadoPath;
         else certificadoPath = '/uploads/' + certificadoPath;
       }
 
-      // if there's an existing certificado, show it and show a checkbox to "Eliminar anterior" before enabling file input
-      const certExistsHtml = certificadoPath ? `<div style="margin-top:6px;"><a href="${escapeHtml(certificadoPath)}" target="_blank" rel="noopener noreferrer">Ver certificado actual</a></div>` : '';
-      const deleteCheckboxHtml = certificadoPath ? `<div style="margin-top:6px;"><label><input type="checkbox" class="cert-delete" data-org="${escapeHtml(oid)}"> Borrar certificado anterior para poder subir uno nuevo</label></div>` : '';
-
-      // file input wraps start hidden unless delete checkbox is checked (for existing cert) or cert did not exist
-      const fileInputVisible = certificadoPath ? 'style="display:none;"' : '';
-      const fileInputHtml = `<div ${fileInputVisible} data-file-wrap="${escapeHtml(oid)}"><label style="font-size:0.9em;">Subir certificado (PDF)</label><input type="file" accept="application/pdf" class="org-cert" data-org="${escapeHtml(oid)}" /></div>`;
+      const certLinkHtml = certificadoPath ? `<div style="margin-top:6px;"><a href="${escapeHtml(certificadoPath)}" target="_blank" rel="noopener noreferrer">Ver certificado actual</a></div>` : '';
+      const fileInputHtml = `<div style="margin-top:6px;"><label style="font-size:0.9em;">Reemplazar certificado (PDF)</label><input type="file" accept="application/pdf" class="org-cert" data-org="${escapeHtml(oid)}" /></div>`;
 
       return `
         <div class="org-item" data-org-id="${escapeHtml(oid)}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
@@ -327,8 +343,7 @@ async function openEventEditModal(id) {
               </div>
 
               <div style="margin-top:6px; display:${checked ? '' : 'none'};" data-cert-block="${escapeHtml(oid)}">
-                ${certExistsHtml}
-                ${deleteCheckboxHtml}
+                ${certLinkHtml}
                 ${fileInputHtml}
               </div>
             </div>
@@ -337,7 +352,58 @@ async function openEventEditModal(id) {
       `;
     }).join('') : '<div class="muted">No hay organizaciones registradas</div>';
 
-    // show modal
+    // --- AVAL block population ---
+    const avalWrap = document.getElementById('avalExistingWrap');
+    const avalDeleteWrap = document.getElementById('avalDeleteWrap');
+    const avalFileWrap = document.getElementById('avalFileWrap');
+    const avalFileInput = document.getElementById('avalFileInput');
+
+    // remove any previous hidden input for delete_aval
+    const prevHidden = form.querySelector('input[name="delete_aval"]');
+    if (prevHidden) prevHidden.remove();
+
+    // determine existing aval for this event (use evento.aval if API returns, else call endpoint)
+    let avalPath = null;
+    if (evento.avalPdf) avalPath = evento.avalPdf;
+    else {
+      const evAv = await fetch(`/api/aval/event/${id}`);
+      if (evAv.ok) {
+        const list = await evAv.json();
+        if (Array.isArray(list) && list.length > 0) avalPath = list[0].avalPdf;
+      }
+    }
+
+    // normalize path
+    if (avalPath && !avalPath.startsWith('/')) {
+      if (avalPath.startsWith('uploads/')) avalPath = '/' + avalPath;
+      else avalPath = '/uploads/' + avalPath;
+    }
+
+    if (avalWrap) {
+      avalWrap.innerHTML = avalPath ? `<div>Aval actual: <a href="${escapeHtml(avalPath)}" target="_blank" rel="noopener noreferrer">Ver aval</a></div>` : `<div class="muted">No hay aval registrado</div>`;
+    }
+
+    // if existe aval: show checkbox to delete before enabling file input; otherwise show file input directly
+    if (avalDeleteWrap && avalFileWrap) {
+      if (avalPath) {
+        avalDeleteWrap.innerHTML = `<label><input type="checkbox" class="aval-delete" /> Borrar aval anterior para poder subir uno nuevo</label>`;
+        // hide file input until user checks the delete checkbox
+        avalFileWrap.style.display = 'none';
+      } else {
+        avalDeleteWrap.innerHTML = '';
+        avalFileWrap.style.display = '';
+      }
+      // add hidden field that controller expects (delete_aval)
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'delete_aval';
+      hidden.value = '0';
+      form.appendChild(hidden);
+    }
+
+    // ensure avalFileInput cleared
+    if (avalFileInput) avalFileInput.value = '';
+
     modal.style.display = 'block';
     setTimeout(() => form.querySelector('[name="nombre"]')?.focus(), 100);
   } catch (err) {
@@ -387,8 +453,6 @@ async function submitEditedEvent(form) {
         const encargadoValRaw = encEl ? encEl.value : '';
         const encargadoVal = encargadoValRaw ? String(encargadoValRaw).trim() : '';
 
-        // If checked as representante legal, ensure we send a non-empty participante:
-        // Priority: user-provided encargadoVal > organizationsState.representanteLegal > validation error
         let participanteValue = null;
         if (isRep) {
           if (encargadoVal) participanteValue = encargadoVal;
@@ -403,20 +467,14 @@ async function submitEditedEvent(form) {
           if (!participanteValue) { toast('Ingrese encargado para organización sin representante legal', 'error'); throw new Error('validation'); }
         }
 
-        // Determine if user asked to delete existing cert for this org (then file input must be used to upload new one)
-        const deleteCheckbox = document.querySelector(`#editOrgList .cert-delete[data-org="${orgId}"]`);
-        const wantsDelete = !!(deleteCheckbox && deleteCheckbox.checked);
-
         organizacionesPayload.push({
           idOrganizacion: orgId,
           esRepresentanteLegal: isRep ? 'si' : 'no',
           participante: participanteValue,
-          deleteCertBeforeUpload: wantsDelete // flag auxiliar para backend if needed
+          deleteCertBeforeUpload: !!document.querySelector(`#editOrgList .cert-delete[data-org="${orgId}"]`)?.checked
         });
 
-        // Validate file input if visible (if user wants to upload new cert)
-        const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${orgId}"]`);
-        const certInput = fileWrap ? fileWrap.querySelector('.org-cert') : document.querySelector(`#editOrgList .org-cert[data-org="${orgId}"]`);
+        const certInput = document.querySelector(`#editOrgList .org-cert[data-org="${orgId}"]`);
         const cert = certInput?.files?.[0];
         if (cert && cert.type !== 'application/pdf') { toast('Certificado debe ser PDF', 'error'); throw new Error('validation'); }
       }
@@ -439,15 +497,29 @@ async function submitEditedEvent(form) {
     sendForm.append('organizaciones', JSON.stringify(organizacionesPayload));
     sendForm.append('instalaciones', JSON.stringify(instalacionesIds));
 
-    if (hasOrg) {
+    // handle aval: if delete_aval === '1' append it; if file present append file and tipoAval
+    const deleteAvalVal = fd.get('delete_aval') || '0';
+    if (deleteAvalVal === '1') sendForm.append('delete_aval', '1');
+
+    const avalFileInput = form.querySelector('#avalFileInput');
+    const avalFile = avalFileInput?.files?.[0];
+    if (avalFile) {
+      if (avalFile.type !== 'application/pdf') { toast('Aval debe ser PDF', 'error'); throw new Error('validation'); }
+    // read tipoAval select
+    const tipoAvalSelect = form.querySelector('#tipoAvalSelect');
+    const tipoAvalValue = tipoAvalSelect ? (tipoAvalSelect.value || '') : '';
+    if (!tipoAvalValue) { toast('Seleccione el tipo de aval antes de subir el archivo', 'error'); throw new Error('validation'); }
+    sendForm.append('tipoAval', tipoAvalValue);
+    sendForm.append('avalPdf', avalFile);
+  }
+
+    // attach org certificate files if provided and forward delete flags per org
+    if (Array.isArray(organizacionesPayload)) {
       for (const p of organizacionesPayload) {
         const oid = p.idOrganizacion;
-        const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${oid}"]`);
-        const certInput = fileWrap ? fileWrap.querySelector('.org-cert') : document.querySelector(`#editOrgList .org-cert[data-org="${oid}"]`);
+        const certInput = document.querySelector(`#editOrgList .org-cert[data-org="${oid}"]`);
         const cert = certInput?.files?.[0];
-        // only append a file when user provided one (and optionally indicated deletion first)
         if (cert) sendForm.append(`certificado_org_${oid}`, cert);
-        // forward delete flag so backend can remove previous file if requested
         if (p.deleteCertBeforeUpload) sendForm.append(`delete_cert_org_${oid}`, '1');
       }
     }

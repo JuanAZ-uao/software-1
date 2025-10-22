@@ -2,8 +2,7 @@
 import pool from '../db/pool.js';
 
 /**
- * Upsert: si certificadoParticipacion viene NULL, preservamos el valor anterior
- * usando la expresión CASE/COALESCE en ON DUPLICATE KEY UPDATE.
+ * Upsert: preserva certificadoParticipacion cuando VALUES(certificadoParticipacion) IS NULL.
  */
 export async function upsert(record, conn) {
   const connection = conn || pool;
@@ -34,13 +33,16 @@ export async function upsert(record, conn) {
   return rows[0] || null;
 }
 
-/**
- * clearCertificate: set certificadoParticipacion = NULL for a given org-event relation
- */
 export async function clearCertificate(idOrganizacion, idEvento, conn) {
   const connection = conn || pool;
   const sql = `UPDATE organizacion_evento SET certificadoParticipacion = NULL WHERE idOrganizacion = ? AND idEvento = ?`;
   const [result] = await connection.query(sql, [idOrganizacion, idEvento]);
+  return result.affectedRows;
+}
+
+export async function deleteByOrgEvent(idOrganizacion, idEvento, conn) {
+  const connection = conn || pool;
+  const [result] = await connection.query('DELETE FROM organizacion_evento WHERE idOrganizacion = ? AND idEvento = ?', [idOrganizacion, idEvento]);
   return result.affectedRows;
 }
 

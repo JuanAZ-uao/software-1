@@ -94,7 +94,8 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
           idEvento,
           participante: org.participante ?? null,
           esRepresentanteLegal: org.representanteLegal ?? org.esRepresentanteLegal ?? 'no',
-          certificadoFile: certFile
+          certificadoFile: certFile,
+          encargado: org.encargado ?? null
         }, conn);
       }
     }
@@ -128,10 +129,17 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
 }
 
 /**
- * Update event and optionally replace installations and organization links
- * params: { id, evento, tipoAval, uploaderId, organizaciones = [], files: { avalFile, certGeneral, orgFiles } }
+ * Update event and synchronize organizations WITHOUT removing certificates unnecessarily.
+ * Also supports replacing or deleting the event-level aval.
+ *
+ * params:
+ *  { id, evento, tipoAval, uploaderId, organizaciones = [], files = {}, deleteAval = false }
+ *
+ * Notes:
+ *  - deleteAval true + no files.avalFile will remove existing aval for (uploaderId,id)
+ *  - if files.avalFile present, tipoAval is required and createAval will replace existing
  */
-export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, organizaciones = [], files = {} }) {
+export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, organizaciones = [], files = {}, deleteAval = false }) {
   validateEvento(evento);
 
   if (evento.instalaciones !== undefined && !Array.isArray(evento.instalaciones)) {
@@ -142,10 +150,36 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
   try {
     await conn.beginTransaction();
 
-    // update evento row
+    // update evento base
     await repo.updateById(id, evento, conn);
 
-    // handle aval update if provided
+    // --- AVAL handling (delete flag or replace) ---
+    // If client requested delete without uploading replacement, remove existing aval record and unlink file.
+    if (deleteAval && (!files || !files.avalFile)) {
+      // use repository directly to find existing aval for this user+event
+      const avalRepo = await import('../repositories/aval.repository.js');
+      if (typeof avalRepo.findByUserEvent === 'function') {
+        const existingAval = await avalRepo.findByUserEvent(uploaderId, id);
+        if (existingAval && existingAval.avalPdf) {
+          await unlinkFileIfExistsPath(existingAval.avalPdf).catch(()=>{});
+        }
+      }
+      if (typeof avalRepo.deleteByUserEvent === 'function') {
+        await avalRepo.deleteByUserEvent(uploaderId, id, conn);
+      } else {
+        // fallback: attempt DELETE by executing query directly
+        if (avalRepo.default) {
+          // nothing
+        } else {
+          try {
+            const connection = conn || (await import('../db/pool.js')).default;
+            await connection.query('DELETE FROM aval WHERE idUsuario = ? AND idEvento = ?', [uploaderId, id]);
+          } catch(e) { /* noop */ }
+        }
+      }
+    }
+
+    // If a new aval file is provided, validate tipoAval and create/replace
     if (files && files.avalFile) {
       if (!tipoAval || !['director_programa','director_docencia'].includes(tipoAval)) {
         throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
@@ -153,7 +187,7 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       await avalService.createAval({ idUsuario: uploaderId, idEvento: id, file: files.avalFile, tipoAval }, conn);
     }
 
-    // replace installations if instalaciones provided explicitly
+    // instalaciones replace if provided explicitly
     if (Array.isArray(evento.instalaciones)) {
       await instEventSvc.unlinkByEvent(id, conn);
       if (evento.instalaciones.length > 0) {
@@ -161,39 +195,42 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       }
     }
 
-    // process organization links:
-    if (Array.isArray(organizaciones)) {
-      // remove existing links first
-      await orgEventService.unlinkByEvent(id, conn);
+    // get existing associations to preserve certificados when needed
+    const existingAssocs = await orgEventService.findByEvent(id, conn); // array of relations
+    const existingMap = {};
+    existingAssocs.forEach(a => { existingMap[String(a.idOrganizacion)] = a; });
 
+    const incomingOrgIds = (Array.isArray(organizaciones) ? organizaciones.map(o => String(o.idOrganizacion || o.id || '')).filter(Boolean) : []);
+
+    // remove associations that exist in DB but are not present in incoming payload
+    const toRemove = existingAssocs.map(a => String(a.idOrganizacion)).filter(eid => !incomingOrgIds.includes(eid));
+    if (toRemove.length > 0) {
+      for (const oid of toRemove) {
+        await (await import('../repositories/organizationEvent.repository.js')).deleteByOrgEvent(oid, id, conn);
+      }
+    }
+
+    // upsert each incoming organization
+    if (Array.isArray(organizaciones)) {
       for (const org of organizaciones) {
         const orgId = org.idOrganizacion || org.id || null;
         if (!orgId) continue;
 
-        // file uploaded for this org?
         const certFile = files.orgFiles && files.orgFiles[orgId] ? files.orgFiles[orgId] : null;
-
-        // delete flag from frontend (merged by controller)
         const wantsDelete = !!org.deleteCertBeforeUpload;
 
-        // If user requested deletion and did not upload a new file, delete DB value and optionally FS
+        // if wantsDelete and no new file uploaded: delete physical file (if existed) and clear DB value
         if (wantsDelete && !certFile) {
-          // read existing relation to get path
-          const existingList = await orgEventService.findByEvent(id, conn);
-          const existing = existingList.find(r => String(r.idOrganizacion) === String(orgId));
+          const existing = existingMap[String(orgId)];
           if (existing && existing.certificadoParticipacion) {
-            // remove file from disk
             await unlinkFileIfExistsPath(existing.certificadoParticipacion).catch(()=>{});
           }
-          // clear DB certificate field
           await orgEventService.clearCertificateForOrg(orgId, id, conn);
         }
 
-        // Build payload for linkOrganizationToEvent
         const esRep = org.esRepresentanteLegal ?? org.representanteLegal ?? org.representante ?? 'no';
         const participantePayload = (org.participante === undefined) ? null : org.participante;
 
-        // Call linkOrganizationToEvent with certificadoFile if present.
         await orgEventService.linkOrganizationToEvent({
           idOrganizacion: orgId,
           idEvento: id,
@@ -202,12 +239,10 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
           certificadoFile: certFile,
           encargado: org.encargado ?? null
         }, conn);
-
-        // If wantsDelete && certFile provided: we assume repo.upsert will set new certificadoParticipacion
       }
     }
 
-    // attach general certificate if provided
+    // general certificate for event
     if (files && files.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
       await repo.attachGeneralCertificate(id, { certificadoParticipacion: certPath }, conn);

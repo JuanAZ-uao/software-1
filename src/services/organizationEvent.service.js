@@ -3,14 +3,11 @@ import * as repo from '../repositories/organizationEvent.repository.js';
 import * as orgRepo from '../repositories/organizations.repository.js';
 
 /**
- * linkOrganizationToEvent acepta certificadoFile (multer file object) opcional.
- * conn es opcional (transacción).
- *
- * Comportamiento:
- * - Respeta participante si viene en payload.
- * - Si esRepresentanteLegal === 'si' y participante no viene, intenta backfill desde organización.
+ * linkOrganizationToEvent:
+ * - Respeta participante si viene.
+ * - Si esRepresentanteLegal === 'si' y participante no viene, backfill desde organización.
  * - Si esRepresentanteLegal === 'no' exige participante.
- * - Si certificadoFile viene, actualiza la ruta; si no viene y no se pide borrar, preserva la ruta existente.
+ * - Si certificadoFile viene, actualiza la ruta; si no viene, no toca certificado (repo.upsert preserva).
  */
 export async function linkOrganizationToEvent({ idOrganizacion, idEvento, participante = null, esRepresentanteLegal = 'no', certificadoFile = null, encargado = null }, conn) {
   if (!idOrganizacion || !idEvento) {
@@ -22,12 +19,12 @@ export async function linkOrganizationToEvent({ idOrganizacion, idEvento, partic
   const esRepFlag = String(esRepresentanteLegal || '').toLowerCase() === 'si' ||
                     String(esRepresentanteLegal || '').toLowerCase() === 'true';
 
-  // Preferir participante del payload; si no existe, usar encargado si se envió
+  // prefer participante param; fallback to encargado param
   let participanteFinal = (participante && String(participante).trim() !== '') ? String(participante).trim()
                        : (encargado && String(encargado).trim() !== '') ? String(encargado).trim()
                        : null;
 
-  // Si es representante legal y no vino participante, intentar backfill desde la organización
+  // backfill from organization when esRepFlag === true and no participante provided
   if (esRepFlag && !participanteFinal) {
     const org = await orgRepo.findById(idOrganizacion);
     if (!org) {
@@ -45,14 +42,12 @@ export async function linkOrganizationToEvent({ idOrganizacion, idEvento, partic
     }
   }
 
-  // Si no es representante legal, participante es obligatorio
   if (!esRepFlag && !participanteFinal) {
     const err = new Error('participante requerido cuando la organización no actúa como representante legal');
     err.status = 400;
     throw err;
   }
 
-  // Si se subió un archivo, guardar la ruta; si no, no tocar certificadoParticipacion aquí
   const certificadoPath = certificadoFile ? `/uploads/${certificadoFile.filename}` : null;
 
   const record = {
@@ -63,10 +58,10 @@ export async function linkOrganizationToEvent({ idOrganizacion, idEvento, partic
     certificadoParticipacion: certificadoPath
   };
 
-  // Usar upsert para insertar o actualizar la relación
   return await repo.upsert(record, conn);
 }
 
+/* helpers */
 export async function unlinkByEvent(idEvento, conn) {
   return await repo.deleteByEvent(idEvento, conn);
 }
@@ -75,12 +70,6 @@ export async function findByEvent(idEvento, conn) {
   return await repo.findByEvent(idEvento, conn);
 }
 
-// helper para limpiar certificadoParticipacion en DB (y opcionalmente el FS si lo desea quien invoca)
 export async function clearCertificateForOrg(idOrganizacion, idEvento, conn) {
-  if (typeof repo.clearCertificate !== 'function') {
-    const err = new Error('Repositorio no implementa clearCertificate');
-    err.status = 500;
-    throw err;
-  }
   return await repo.clearCertificate(idOrganizacion, idEvento, conn);
 }
