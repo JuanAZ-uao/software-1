@@ -1,3 +1,4 @@
+// app.js
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -90,19 +91,24 @@ export const createApp = () => {
   app.use('/api/organizations', organizationsRouter);
   app.use('/api/installations', installationsRouter);
   app.use('/api/events', eventsRouter);
-  app.use('/api/organization-events', organizationEventRouter);
-  app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
-  app.use('/api', apiNotFoundHandler);
+
+  // Mount the organization-event router under the singular prefix expected by frontend
+  app.use('/api/organization-event', organizationEventRouter);
+
+  // keep /api/documentos mounted before not-found handler
   app.use('/api/documentos', documentoRoutes);
 
-  // Archivos estáticos y frontend
+  app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
+  app.use('/api', apiNotFoundHandler);
+
+  // Archivos estáticos y frontend (SPA)
   app.use(express.static(path.join(__dirname, 'public')));
 
   app.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api')) {
       res.sendFile(path.join(__dirname, 'public', 'index.html'));
     } else {
-      res.status(404).send('404 Not Found');
+      next();
     }
   });
 
@@ -111,4 +117,5 @@ export const createApp = () => {
 
   return app;
 };
+
 export const app = createApp();

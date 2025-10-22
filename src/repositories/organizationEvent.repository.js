@@ -1,8 +1,9 @@
+// src/repositories/organizationEvent.repository.js
 import pool from '../db/pool.js';
 
 /**
- * Inserta o actualiza (upsert) una relación organizacion_evento.
- * Devuelve la fila resultante de organizacion_evento.
+ * Upsert: si certificadoParticipacion viene NULL, preservamos el valor anterior
+ * usando la expresión CASE/COALESCE en ON DUPLICATE KEY UPDATE.
  */
 export async function upsert(record, conn) {
   const connection = conn || pool;
@@ -13,14 +14,17 @@ export async function upsert(record, conn) {
     ON DUPLICATE KEY UPDATE
       participante = VALUES(participante),
       esRepresentanteLegal = VALUES(esRepresentanteLegal),
-      certificadoParticipacion = VALUES(certificadoParticipacion)
+      certificadoParticipacion = CASE
+        WHEN VALUES(certificadoParticipacion) IS NULL THEN certificadoParticipacion
+        ELSE VALUES(certificadoParticipacion)
+      END
   `;
   const params = [
     record.idOrganizacion,
     record.idEvento,
-    record.participante || '',
+    (record.participante === null || record.participante === undefined) ? null : record.participante,
     record.esRepresentanteLegal || 'no',
-    record.certificadoParticipacion || null
+    (record.certificadoParticipacion === undefined) ? null : record.certificadoParticipacion
   ];
   await connection.query(sql, params);
   const [rows] = await connection.query(
@@ -31,9 +35,15 @@ export async function upsert(record, conn) {
 }
 
 /**
- * Mantengo insert por compatibilidad (simple insert sin upsert).
- * Puedes preferir llamar a upsert en vez de insert desde service.
+ * clearCertificate: set certificadoParticipacion = NULL for a given org-event relation
  */
+export async function clearCertificate(idOrganizacion, idEvento, conn) {
+  const connection = conn || pool;
+  const sql = `UPDATE organizacion_evento SET certificadoParticipacion = NULL WHERE idOrganizacion = ? AND idEvento = ?`;
+  const [result] = await connection.query(sql, [idOrganizacion, idEvento]);
+  return result.affectedRows;
+}
+
 export async function insert(record, conn) {
   const connection = conn || pool;
   const sql = `INSERT INTO organizacion_evento (idOrganizacion, idEvento, participante, esRepresentanteLegal, certificadoParticipacion)
@@ -50,19 +60,6 @@ export async function deleteByEvent(idEvento, conn) {
   return result.affectedRows;
 }
 
-/**
- * findByEvent: devuelve lista de asociaciones para un evento,
- * cada fila incluye datos de la organización (join) para facilitar precarga en frontend.
- * Retorna estructura normalizada:
- * {
- *   idOrganizacion,
- *   idEvento,
- *   participante,
- *   esRepresentanteLegal,
- *   certificadoParticipacion,
- *   org: { idOrganizacion, nombre, sectorEconomico, representanteLegal, ... }
- * }
- */
 export async function findByEvent(idEvento, conn) {
   const connection = conn || pool;
   const sql = `
@@ -75,7 +72,6 @@ export async function findByEvent(idEvento, conn) {
     WHERE oe.idEvento = ?
   `;
   const [rows] = await connection.query(sql, [idEvento]);
-  // map rows to a friendly shape
   return rows.map(r => ({
     idOrganizacion: r.idOrganizacion,
     idEvento: r.idEvento,

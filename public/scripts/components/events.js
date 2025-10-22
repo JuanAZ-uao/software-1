@@ -156,10 +156,6 @@ export async function renderEvents() {
 
             <div class="flex gap-12">
               <div style="flex:1"><label class="label">Hora fin</label><input class="input" name="horaFin" type="time" required></div>
-<<<<<<< HEAD
-=======
-              <div style="flex:1"><label class="label">Capacidad (opcional)</label><input class="input" name="capacidad" type="number" min="1"></div>
->>>>>>> 3d88b9bc7ac5bc53c9cc7c12bedb8e14b112d16f
             </div>
 
             <div>
@@ -205,14 +201,6 @@ export async function renderEvents() {
               </select>
             </div>
 
-<<<<<<< HEAD
-=======
-            <div>
-              <label class="label">Descripción (opcional)</label>
-              <textarea class="textarea" name="descripcion"></textarea>
-            </div>
-
->>>>>>> 3d88b9bc7ac5bc53c9cc7c12bedb8e14b112d16f
             <div class="flex-row" style="gap:8px;">
               <button type="submit" class="btn primary" id="evtSubmitBtn">Crear (estado: registrado)</button>
               <button type="button" id="evtClear" class="btn">Limpiar</button>

@@ -72,6 +72,7 @@ export async function create(req, res) {
     res.status(err.status || 500).json({ error: err.message || 'Error creando evento' });
   }
 }
+
 export async function update(req, res) {
   try {
     const filesDict = mapFilesArrayToDict(req.files || []);
@@ -93,6 +94,24 @@ export async function update(req, res) {
       }
     }
 
+    // merge delete flags from req.body into organizaciones array items for convenience
+    // req.body may contain keys like delete_cert_org_<id> = '1'
+    const mergedOrgs = (organizaciones || []).map(o => ({ ...o }));
+    const bodyKeys = Object.keys(req.body || {});
+    for (const k of bodyKeys) {
+      if (k.startsWith('delete_cert_org_')) {
+        const id = k.slice('delete_cert_org_'.length);
+        const v = req.body[k];
+        const truthy = (v === '1' || v === 'true' || v === 1 || v === true);
+        const found = mergedOrgs.find(x => String(x.idOrganizacion) === String(id));
+        if (found) {
+          found.deleteCertBeforeUpload = truthy;
+        } else {
+          mergedOrgs.push({ idOrganizacion: id, representanteLegal: 'no', participante: null, deleteCertBeforeUpload: truthy });
+        }
+      }
+    }
+
     const uploaderId = req.user?.id || payloadEvento.idUsuario || null;
 
     const updated = await svc.updateEventWithOrgs({
@@ -100,7 +119,7 @@ export async function update(req, res) {
       evento: payloadEvento,
       tipoAval,
       uploaderId,
-      organizaciones,
+      organizaciones: mergedOrgs,
       files: { avalFile, certGeneral, orgFiles }
     });
 
@@ -110,6 +129,7 @@ export async function update(req, res) {
     res.status(err.status || 500).json({ error: err.message || 'Error actualizando evento' });
   }
 }
+
 export async function remove(req, res) {
   try {
     const ok = await svc.deleteEvent(req.params.id);

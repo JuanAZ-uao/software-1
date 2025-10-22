@@ -6,6 +6,7 @@ import * as avalService from './aval.service.js';
 import * as orgEventService from './organizationEvent.service.js';
 import * as instEventSvc from './eventInstallation.service.js';
 import fs from 'fs';
+import path from 'path';
 
 function validateEvento(payload) {
   if (!payload) throw Object.assign(new Error('Payload evento requerido'), { status: 400 });
@@ -14,11 +15,18 @@ function validateEvento(payload) {
   if (!payload.fecha) throw Object.assign(new Error('Fecha requerida'), { status: 400 });
   if (!payload.hora) throw Object.assign(new Error('Hora requerida'), { status: 400 });
   if (!payload.horaFin) throw Object.assign(new Error('HoraFin requerida'), { status: 400 });
-  // note: idInstalacion single is deprecated; payload may contain 'instalaciones' array
   const fecha = new Date(payload.fecha);
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   if (fecha < hoy) throw Object.assign(new Error('Fecha debe ser hoy o futura'), { status: 400 });
   if (payload.horaFin <= payload.hora) throw Object.assign(new Error('horaFin debe ser mayor que hora'), { status: 400 });
+}
+
+async function unlinkFileIfExistsPath(certPath) {
+  try {
+    if (!certPath) return;
+    const abs = certPath.startsWith('/') ? path.join(process.cwd(), certPath) : path.join(process.cwd(), 'uploads', certPath);
+    await fs.promises.unlink(abs).catch(()=>{});
+  } catch (e) { /* noop */ }
 }
 
 async function unlinkFileIfExists(file) {
@@ -43,23 +51,20 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
     throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
   }
 
-  // validate instalaciones array if present
   if (!Array.isArray(evento.instalaciones) || evento.instalaciones.length === 0) {
     throw Object.assign(new Error('instalaciones requeridas'), { status: 400 });
   }
 
-  // Optional: validate that each installation exists (lightweight)
   for (const idInst of evento.instalaciones) {
     const inst = await instRepo.findById(idInst);
     if (!inst) throw Object.assign(new Error(`Instalación ${idInst} no encontrada`), { status: 400 });
   }
 
-  // prevent duplicate event by same nombre+fecha+hora+one installation (idempotency is optional)
   const existing = await repo.findByUniqueMatch({
     nombre: evento.nombre,
     fecha: evento.fecha,
     hora: evento.hora,
-    idInstalacion: evento.instalaciones[0] // use first for duplicate check
+    idInstalacion: evento.instalaciones[0]
   });
   if (existing) return existing;
 
@@ -67,9 +72,7 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
   try {
     await conn.beginTransaction();
 
-    // insert event row (merge uploader)
     const payloadToInsert = { ...evento, idUsuario: uploaderId };
-    // if your evento table has idInstalacion column you may set it to first installation for compatibility
     if (!payloadToInsert.idInstalacion && Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
       payloadToInsert.idInstalacion = evento.instalaciones[0];
     }
@@ -77,15 +80,12 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
     const evCreated = await repo.insert(payloadToInsert, conn);
     const idEvento = evCreated.idEvento;
 
-    // attach aval using aval service (expects multer file)
     await avalService.createAval({ idUsuario: uploaderId, idEvento, file: files.avalFile, tipoAval }, conn);
 
-    // create enlaces evento_instalacion for each selected installation
     if (Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
       await instEventSvc.linkInstallationsToEvent(idEvento, evento.instalaciones, conn);
     }
 
-    // process organizations if any
     if (Array.isArray(organizaciones) && organizaciones.length > 0) {
       for (const org of organizaciones) {
         const certFile = files.orgFiles && files.orgFiles[org.idOrganizacion] ? files.orgFiles[org.idOrganizacion] : null;
@@ -93,13 +93,12 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
           idOrganizacion: org.idOrganizacion,
           idEvento,
           participante: org.participante ?? null,
-          esRepresentanteLegal: org.representanteLegal ?? 'no',
+          esRepresentanteLegal: org.representanteLegal ?? org.esRepresentanteLegal ?? 'no',
           certificadoFile: certFile
         }, conn);
       }
     }
 
-    // attach general certificate if provided
     if (files.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
       await repo.attachGeneralCertificate(idEvento, { certificadoParticipacion: certPath }, conn);
@@ -112,7 +111,6 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
   } catch (err) {
     await conn.rollback();
 
-    // cleanup uploaded files
     try {
       await unlinkFileIfExists(files?.avalFile);
       await unlinkFileIfExists(files?.certGeneral);
@@ -136,7 +134,6 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
 export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, organizaciones = [], files = {} }) {
   validateEvento(evento);
 
-  // If payload contains instalaciones array, validate them
   if (evento.instalaciones !== undefined && !Array.isArray(evento.instalaciones)) {
     throw Object.assign(new Error('instalaciones debe ser un array'), { status: 400 });
   }
@@ -145,8 +142,10 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
   try {
     await conn.beginTransaction();
 
+    // update evento row
     await repo.updateById(id, evento, conn);
 
+    // handle aval update if provided
     if (files && files.avalFile) {
       if (!tipoAval || !['director_programa','director_docencia'].includes(tipoAval)) {
         throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
@@ -162,21 +161,53 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       }
     }
 
-    // replace organization links if organizaciones provided explicitly
+    // process organization links:
     if (Array.isArray(organizaciones)) {
+      // remove existing links first
       await orgEventService.unlinkByEvent(id, conn);
+
       for (const org of organizaciones) {
-        const certFile = files.orgFiles && files.orgFiles[org.idOrganizacion] ? files.orgFiles[org.idOrganizacion] : null;
+        const orgId = org.idOrganizacion || org.id || null;
+        if (!orgId) continue;
+
+        // file uploaded for this org?
+        const certFile = files.orgFiles && files.orgFiles[orgId] ? files.orgFiles[orgId] : null;
+
+        // delete flag from frontend (merged by controller)
+        const wantsDelete = !!org.deleteCertBeforeUpload;
+
+        // If user requested deletion and did not upload a new file, delete DB value and optionally FS
+        if (wantsDelete && !certFile) {
+          // read existing relation to get path
+          const existingList = await orgEventService.findByEvent(id, conn);
+          const existing = existingList.find(r => String(r.idOrganizacion) === String(orgId));
+          if (existing && existing.certificadoParticipacion) {
+            // remove file from disk
+            await unlinkFileIfExistsPath(existing.certificadoParticipacion).catch(()=>{});
+          }
+          // clear DB certificate field
+          await orgEventService.clearCertificateForOrg(orgId, id, conn);
+        }
+
+        // Build payload for linkOrganizationToEvent
+        const esRep = org.esRepresentanteLegal ?? org.representanteLegal ?? org.representante ?? 'no';
+        const participantePayload = (org.participante === undefined) ? null : org.participante;
+
+        // Call linkOrganizationToEvent with certificadoFile if present.
         await orgEventService.linkOrganizationToEvent({
-          idOrganizacion: org.idOrganizacion,
+          idOrganizacion: orgId,
           idEvento: id,
-          participante: org.participante ?? null,
-          esRepresentanteLegal: org.representanteLegal ?? 'no',
-          certificadoFile: certFile
+          participante: participantePayload,
+          esRepresentanteLegal: esRep,
+          certificadoFile: certFile,
+          encargado: org.encargado ?? null
         }, conn);
+
+        // If wantsDelete && certFile provided: we assume repo.upsert will set new certificadoParticipacion
       }
     }
 
+    // attach general certificate if provided
     if (files && files.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
       await repo.attachGeneralCertificate(id, { certificadoParticipacion: certPath }, conn);
@@ -196,11 +227,9 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
 export async function getAllEvents() {
   return await repo.findAll();
 }
-
 export async function getEventById(id) {
   return await repo.findById(id);
 }
-
 export async function deleteEvent(id) {
   return await repo.deleteById(id);
 }

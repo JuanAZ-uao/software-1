@@ -10,7 +10,7 @@ import * as orgRepo from '../repositories/organizations.repository.js';
  * - Respeta participante si viene en payload.
  * - Si esRepresentanteLegal === 'si' y participante no viene, intenta backfill desde organización.
  * - Si esRepresentanteLegal === 'no' exige participante.
- * - Guarda la ruta del certificado si se recibe certificadoFile; si no se recibe, deja el valor tal como viene.
+ * - Si certificadoFile viene, actualiza la ruta; si no viene y no se pide borrar, preserva la ruta existente.
  */
 export async function linkOrganizationToEvent({ idOrganizacion, idEvento, participante = null, esRepresentanteLegal = 'no', certificadoFile = null, encargado = null }, conn) {
   if (!idOrganizacion || !idEvento) {
@@ -73,4 +73,14 @@ export async function unlinkByEvent(idEvento, conn) {
 
 export async function findByEvent(idEvento, conn) {
   return await repo.findByEvent(idEvento, conn);
+}
+
+// helper para limpiar certificadoParticipacion en DB (y opcionalmente el FS si lo desea quien invoca)
+export async function clearCertificateForOrg(idOrganizacion, idEvento, conn) {
+  if (typeof repo.clearCertificate !== 'function') {
+    const err = new Error('Repositorio no implementa clearCertificate');
+    err.status = 500;
+    throw err;
+  }
+  return await repo.clearCertificate(idOrganizacion, idEvento, conn);
 }

@@ -97,10 +97,6 @@ export function renderDashboard(){
       <div class="col-3 col-12">${statCard('Total eventos', normalized.length, '')}</div>
       <div class="col-3 col-12">${statCard('Mis eventos', myEvents.length, '')}</div>
       <div class="col-3 col-12">${statCard('Organizaciones', organizations?.length || 0, '')}</div>
-<<<<<<< HEAD
-=======
-      <div class="col-3 col-12">${statCard('Usuarios', users?.length || 0, '')}</div>
->>>>>>> 3d88b9bc7ac5bc53c9cc7c12bedb8e14b112d16f
     </section>
 
     <section class="grid mt-24">
