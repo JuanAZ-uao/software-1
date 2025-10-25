@@ -4,8 +4,10 @@ import fs from 'fs';
 
 function mapFilesArrayToDict(filesArray = []) {
   const dict = {};
-  for (const f of filesArray) dict[f.fieldname] = dict[f.fieldname] || [];
-  for (const f of filesArray) dict[f.fieldname].push(f);
+  for (const f of filesArray) {
+    dict[f.fieldname] = dict[f.fieldname] || [];
+    dict[f.fieldname].push(f);
+  }
   return dict;
 }
 
@@ -14,37 +16,30 @@ export async function getAll(req, res) {
     const list = await svc.getAllEvents();
     res.json(list);
   } catch (err) {
-    console.error(err);
+    console.error('events.controller.getAll error:', err);
     res.status(500).json({ error: 'Error obteniendo eventos' });
   }
 }
 
-
-// NUEVO: Endpoint específico para secretarias
 export async function getEventsForSecretaria(req, res) {
   try {
     const list = await svc.getEventsForSecretaria();
     res.json(list);
   } catch (err) {
-    console.error(err);
+    console.error('events.controller.getEventsForSecretaria error:', err);
     res.status(500).json({ error: 'Error obteniendo eventos para secretaria' });
   }
 }
 
-// NUEVO: Endpoint para evaluar eventos (aprobar/rechazar)
 export async function evaluateEvent(req, res) {
   try {
     const filesDict = mapFilesArrayToDict(req.files || []);
     const { idEvento, estado, justificacion } = req.body;
     const actaFile = filesDict['actaAprobacion'] ? filesDict['actaAprobacion'][0] : null;
-    
-    // Obtener ID de la secretaria desde el token o sesión
     const idSecretaria = req.user?.id || req.body.idSecretaria;
-    
-    if (!idSecretaria) {
-      return res.status(401).json({ error: 'Secretaria no identificada' });
-    }
-    
+
+    if (!idSecretaria) return res.status(401).json({ error: 'Secretaria no identificada' });
+
     const result = await svc.evaluateEvent({
       idEvento,
       estado,
@@ -52,14 +47,13 @@ export async function evaluateEvent(req, res) {
       actaFile,
       idSecretaria
     });
-    
+
     res.json(result);
   } catch (err) {
-    console.error('Error evaluating event:', err);
+    console.error('events.controller.evaluateEvent error:', err);
     res.status(err.status || 500).json({ error: err.message || 'Error evaluando evento' });
   }
 }
-
 
 export async function getById(req, res) {
   try {
@@ -67,7 +61,7 @@ export async function getById(req, res) {
     if (!ev) return res.status(404).json({ error: 'Evento no encontrado' });
     res.json(ev);
   } catch (err) {
-    console.error(err);
+    console.error('events.controller.getById error:', err);
     res.status(500).json({ error: 'Error obteniendo evento' });
   }
 }
@@ -77,11 +71,13 @@ export async function create(req, res) {
     const filesDict = mapFilesArrayToDict(req.files || []);
     const eventoRaw = req.body.evento;
     if (!eventoRaw) return res.status(400).json({ error: 'Evento no enviado' });
-    const payloadEvento = JSON.parse(eventoRaw);
+
+    let payloadEvento;
+    try { payloadEvento = JSON.parse(eventoRaw); } catch (e) { return res.status(400).json({ error: 'evento JSON inválido' }); }
+
     const tipoAval = req.body.tipoAval;
     if (!tipoAval) return res.status(400).json({ error: 'tipoAval requerido' });
 
-    // organizaciones optional (frontend sends JSON)
     let organizaciones = [];
     if (req.body.organizaciones) {
       try { organizaciones = JSON.parse(req.body.organizaciones); } catch (e) { return res.status(400).json({ error: 'organizaciones JSON inválido' }); }
@@ -99,6 +95,7 @@ export async function create(req, res) {
     }
 
     const uploaderId = req.user?.id || payloadEvento.idUsuario || null;
+    if (!uploaderId) return res.status(401).json({ error: 'Usuario no identificado' });
 
     const created = await svc.createEventWithOrgs({
       evento: payloadEvento,
@@ -136,11 +133,9 @@ export async function update(req, res) {
       }
     }
 
-    // merge delete flags from req.body into organizaciones array items for convenience
-    // req.body may contain keys like delete_cert_org_<id> = '1'
+    // merge delete flags for org certificates (delete_cert_org_<id>) into organizaciones array items
     const mergedOrgs = (organizaciones || []).map(o => ({ ...o }));
-    const bodyKeys = Object.keys(req.body || {});
-    for (const k of bodyKeys) {
+    for (const k of Object.keys(req.body || {})) {
       if (k.startsWith('delete_cert_org_')) {
         const id = k.slice('delete_cert_org_'.length);
         const v = req.body[k];
@@ -154,7 +149,12 @@ export async function update(req, res) {
       }
     }
 
+    // detect delete_aval flag (sent as delete_aval = '1' when user wants to remove existing aval without uploading new one)
+    const deleteAvalFlagRaw = req.body.delete_aval || req.body.deleteAval || '0';
+    const deleteAval = (deleteAvalFlagRaw === '1' || deleteAvalFlagRaw === 'true' || deleteAvalFlagRaw === true);
+
     const uploaderId = req.user?.id || payloadEvento.idUsuario || null;
+    if (!uploaderId) return res.status(401).json({ error: 'Usuario no identificado' });
 
     const updated = await svc.updateEventWithOrgs({
       id: req.params.id,
@@ -162,7 +162,8 @@ export async function update(req, res) {
       tipoAval,
       uploaderId,
       organizaciones: mergedOrgs,
-      files: { avalFile, certGeneral, orgFiles }
+      files: { avalFile, certGeneral, orgFiles },
+      deleteAval
     });
 
     res.json(updated);
@@ -178,7 +179,7 @@ export async function remove(req, res) {
     if (!ok) return res.status(404).json({ error: 'Evento no encontrado' });
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error('events.controller.remove error:', err);
     res.status(500).json({ error: 'Error eliminando evento' });
   }
 }

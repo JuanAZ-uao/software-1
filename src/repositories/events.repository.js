@@ -46,7 +46,8 @@ export async function insert(evento, conn) {
   }
 
   const placeholders = entries.map(() => '?').join(', ');
-  const sql = `INSERT INTO evento (${entries.join(',')}) VALUES (${placeholders})`;
+  const columnsSql = entries.map(c => `\`${c}\``).join(', ');
+  const sql = `INSERT INTO evento (${columnsSql}) VALUES (${placeholders})`;
   const [result] = await connection.query(sql, values);
 
   const insertedId = result.insertId;
@@ -64,8 +65,8 @@ export async function findById(id) {
       u.telefono as organizadorTelefono,
       a.avalPdf,
       a.tipoAval,
-      GROUP_CONCAT(DISTINCT i.nombre) as instalacionesNombres,
-      GROUP_CONCAT(DISTINCT i.idInstalacion) as instalacionesIds
+      GROUP_CONCAT(DISTINCT i.nombre ORDER BY i.nombre SEPARATOR ',') as instalacionesNombres,
+      GROUP_CONCAT(DISTINCT i.idInstalacion ORDER BY i.idInstalacion SEPARATOR ',') as instalacionesIds
     FROM evento e
     LEFT JOIN usuario u ON e.idUsuario = u.idUsuario
     LEFT JOIN evento_instalacion ei ON e.idEvento = ei.idEvento
@@ -76,20 +77,18 @@ export async function findById(id) {
     LIMIT 1
   `, [id]);
   
-  if (rows.length === 0) return null;
+  if (!rows || rows.length === 0) return null;
   
   const evento = rows[0];
   
-  // Procesar y retornar evento con todos los campos
   return {
     ...evento,
-    // Asegurar que todos los campos estén presentes
     nombre: evento.nombre || '',
     tipo: evento.tipo || '',
     fecha: evento.fecha || '',
     hora: evento.hora || '',
     horaFin: evento.horaFin || '',
-    capacidad: evento.capacidad || null,
+    capacidad: evento.capacidad !== undefined && evento.capacidad !== null ? evento.capacidad : null,
     ubicacion: evento.ubicacion || '',
     descripcion: evento.descripcion || '',
     avalPdf: evento.avalPdf || null,
@@ -100,10 +99,11 @@ export async function findById(id) {
     instalaciones: evento.instalacionesNombres ? 
       evento.instalacionesNombres.split(',').map((nombre, idx) => ({
         nombre: nombre.trim(),
-        idInstalacion: evento.instalacionesIds?.split(',')[idx]
+        idInstalacion: (evento.instalacionesIds || '').split(',')[idx]
       })) : []
   };
 }
+
 export async function findAll() {
   const [rows] = await pool.query('SELECT * FROM evento ORDER BY idEvento DESC');
   return rows;
@@ -124,7 +124,7 @@ export async function updateById(id, payload, conn) {
   if (entries.length === 0) {
     throw Object.assign(new Error('No hay campos válidos para actualizar en evento'), { status: 400 });
   }
-  const setSql = entries.map(k => `${k} = ?`).join(', ');
+  const setSql = entries.map(k => `\`${k}\` = ?`).join(', ');
   const sql = `UPDATE evento SET ${setSql} WHERE idEvento = ?`;
   await connection.query(sql, [...values, id]);
   const [rows] = await connection.query('SELECT * FROM evento WHERE idEvento = ? LIMIT 1', [id]);
@@ -144,16 +144,15 @@ export async function deleteById(id) {
  */
 export async function attachAval(idEvento, { avalPdf, tipoAval }, conn) {
   const connection = conn || pool;
-  // check columns
   const allowedCols = await getTableColumns('evento');
   const updates = [];
   const params = [];
   if (allowedCols.has('avalPdf')) {
-    updates.push('avalPdf = ?');
+    updates.push('`avalPdf` = ?');
     params.push(avalPdf);
   }
   if (allowedCols.has('tipoAval')) {
-    updates.push('tipoAval = ?');
+    updates.push('`tipoAval` = ?');
     params.push(tipoAval);
   }
   if (updates.length === 0) return null;
@@ -170,23 +169,16 @@ export async function attachGeneralCertificate(idEvento, { certificadoParticipac
   const connection = conn || pool;
   const allowedCols = await getTableColumns('evento');
   if (!allowedCols.has('certificadoParticipacion')) {
-    // if column doesn't exist, skip (or you can insert to a separate table)
     return null;
   }
-  await connection.query('UPDATE evento SET certificadoParticipacion = ? WHERE idEvento = ?', [certificadoParticipacion, idEvento]);
+  await connection.query('UPDATE evento SET `certificadoParticipacion` = ? WHERE idEvento = ?', [certificadoParticipacion, idEvento]);
   const [rows] = await connection.query('SELECT * FROM evento WHERE idEvento = ? LIMIT 1', [idEvento]);
   return rows[0] || null;
 }
   
-
 // ============================================
 // NUEVA FUNCIÓN PARA DASHBOARD DE SECRETARIAS
 // ============================================
-
-/**
- * Obtiene todos los eventos con detalles del organizador para el dashboard de secretarias
- * Incluye: nombre organizador, email, teléfono, instalaciones, aval
- */
 export async function getAllEventsWithDetails() {
   const [rows] = await pool.query(`
     SELECT 
@@ -197,7 +189,7 @@ export async function getAllEventsWithDetails() {
       u.telefono as organizadorTelefono,
       a.avalPdf,
       a.tipoAval,
-      GROUP_CONCAT(DISTINCT i.nombre) as instalacionesNombres
+      GROUP_CONCAT(DISTINCT i.nombre ORDER BY i.nombre SEPARATOR ',') as instalacionesNombres
     FROM evento e
     LEFT JOIN usuario u ON e.idUsuario = u.idUsuario
     LEFT JOIN evento_instalacion ei ON e.idEvento = ei.idEvento
@@ -207,10 +199,9 @@ export async function getAllEventsWithDetails() {
     ORDER BY e.fecha DESC, e.hora DESC
   `);
   
-  // Procesar instalaciones y formatear datos
   return rows.map(row => ({
     ...row,
-    capacidad: row.capacidad || null,
+    capacidad: row.capacidad !== undefined && row.capacidad !== null ? row.capacidad : null,
     ubicacion: row.ubicacion || '',
     descripcion: row.descripcion || '',
     avalPdf: row.avalPdf || null,

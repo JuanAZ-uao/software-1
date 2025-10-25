@@ -21,6 +21,10 @@ function validateEvento(payload) {
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   if (fecha < hoy) throw Object.assign(new Error('Fecha debe ser hoy o futura'), { status: 400 });
   if (payload.horaFin <= payload.hora) throw Object.assign(new Error('horaFin debe ser mayor que hora'), { status: 400 });
+  if (payload.capacidad !== undefined && payload.capacidad !== null) {
+    const c = Number(payload.capacidad);
+    if (!Number.isInteger(c) || c < 1) throw Object.assign(new Error('capacidad inválida'), { status: 400 });
+  }
 }
 
 async function unlinkFileIfExistsPath(certPath) {
@@ -33,18 +37,49 @@ async function unlinkFileIfExistsPath(certPath) {
 
 async function unlinkFileIfExists(file) {
   try {
-    if (!file || !file.path) return;
-    await fs.promises.unlink(file.path).catch(()=>{});
+    if (!file) return;
+    if (file.path) {
+      await fs.promises.unlink(file.path).catch(()=>{});
+    } else if (file.filename) {
+      const abs = path.join(process.cwd(), 'uploads', file.filename);
+      await fs.promises.unlink(abs).catch(()=>{});
+    }
   } catch (e) { /* noop */ }
 }
 
 /**
- * Create event with zero or many organizations and multiple installations.
+ * Helper: compute total capacity available given array of installation ids
+ */
+async function computeSumCapacity(installationsIds = []) {
+  let sum = 0;
+  for (const id of installationsIds) {
+    const inst = await instRepo.findById(id);
+    if (!inst) throw Object.assign(new Error(`Instalación ${id} no encontrada`), { status: 400 });
+    const capInst = inst.capacidad !== undefined && inst.capacidad !== null ? Number(inst.capacidad) : null;
+    if (capInst === null || !Number.isInteger(capInst)) {
+      throw Object.assign(new Error(`Capacidad no definida o inválida para instalación ${id}`), { status: 400 });
+    }
+    sum += capInst;
+  }
+  return sum;
+}
+
+/**
+ * Create event with organizations and installations.
  * params:
  *   { evento, tipoAval, uploaderId, organizaciones = [], files: { avalFile, certGeneral, orgFiles } }
  */
 export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organizaciones = [], files = {} }) {
   validateEvento(evento);
+
+  // require capacidad at creation
+  if (evento.capacidad === undefined || evento.capacidad === null) {
+    throw Object.assign(new Error('capacidad del evento requerida'), { status: 400 });
+  }
+  const capacidadEvento = Number(evento.capacidad);
+  if (!Number.isInteger(capacidadEvento) || capacidadEvento < 1) {
+    throw Object.assign(new Error('capacidad inválida'), { status: 400 });
+  }
 
   if (!files || !files.avalFile) {
     throw Object.assign(new Error('Aval (PDF) obligatorio'), { status: 400 });
@@ -57,11 +92,13 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
     throw Object.assign(new Error('instalaciones requeridas'), { status: 400 });
   }
 
-  for (const idInst of evento.instalaciones) {
-    const inst = await instRepo.findById(idInst);
-    if (!inst) throw Object.assign(new Error(`Instalación ${idInst} no encontrada`), { status: 400 });
+  // compute sum capacity of selected installations
+  const sumCap = await computeSumCapacity(evento.instalaciones);
+  if (sumCap < capacidadEvento) {
+    throw Object.assign(new Error(`Capacidad total de instalaciones seleccionadas (${sumCap}) es menor que la capacidad del evento (${capacidadEvento})`), { status: 400 });
   }
 
+  // optional uniqueness check
   const existing = await repo.findByUniqueMatch({
     nombre: evento.nombre,
     fecha: evento.fecha,
@@ -74,7 +111,7 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
   try {
     await conn.beginTransaction();
 
-    const payloadToInsert = { ...evento, idUsuario: uploaderId };
+    const payloadToInsert = { ...evento, idUsuario: uploaderId, capacidad: capacidadEvento };
     if (!payloadToInsert.idInstalacion && Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
       payloadToInsert.idInstalacion = evento.instalaciones[0];
     }
@@ -82,12 +119,15 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
     const evCreated = await repo.insert(payloadToInsert, conn);
     const idEvento = evCreated.idEvento;
 
+    // create aval (service handles file persistence)
     await avalService.createAval({ idUsuario: uploaderId, idEvento, file: files.avalFile, tipoAval }, conn);
 
+    // link installations
     if (Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
       await instEventSvc.linkInstallationsToEvent(idEvento, evento.instalaciones, conn);
     }
 
+    // organizations linking and certificates
     if (Array.isArray(organizaciones) && organizaciones.length > 0) {
       for (const org of organizaciones) {
         const certFile = files.orgFiles && files.orgFiles[org.idOrganizacion] ? files.orgFiles[org.idOrganizacion] : null;
@@ -102,28 +142,25 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
       }
     }
 
+    // attach general certificate if provided
     if (files.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
       await repo.attachGeneralCertificate(idEvento, { certificadoParticipacion: certPath }, conn);
     }
 
     await conn.commit();
-
     const created = await repo.findById(idEvento);
     return created;
   } catch (err) {
     await conn.rollback();
-
+    // cleanup uploaded files
     try {
       await unlinkFileIfExists(files?.avalFile);
       await unlinkFileIfExists(files?.certGeneral);
       if (files?.orgFiles) {
-        for (const k of Object.keys(files.orgFiles)) {
-          await unlinkFileIfExists(files.orgFiles[k]);
-        }
+        for (const k of Object.keys(files.orgFiles)) await unlinkFileIfExists(files.orgFiles[k]);
       }
     } catch (e) { /* noop */ }
-
     throw err;
   } finally {
     conn.release();
@@ -136,10 +173,6 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
  *
  * params:
  *  { id, evento, tipoAval, uploaderId, organizaciones = [], files = {}, deleteAval = false }
- *
- * Notes:
- *  - deleteAval true + no files.avalFile will remove existing aval for (uploaderId,id)
- *  - if files.avalFile present, tipoAval is required and createAval will replace existing
  */
 export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, organizaciones = [], files = {}, deleteAval = false }) {
   validateEvento(evento);
@@ -148,40 +181,39 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
     throw Object.assign(new Error('instalaciones debe ser un array'), { status: 400 });
   }
 
+  // if client provided capacidad, validate against installations (provided or existing)
+  const capacidadEvento = (evento.capacidad !== undefined && evento.capacidad !== null) ? Number(evento.capacidad) : null;
+  if (capacidadEvento !== null) {
+    if (!Number.isInteger(capacidadEvento) || capacidadEvento < 1) throw Object.assign(new Error('capacidad inválida'), { status: 400 });
+    const instIds = Array.isArray(evento.instalaciones) ? evento.instalaciones : (await instEventSvc.findInstallationsByEvent(id) || []);
+    if (!Array.isArray(instIds) || instIds.length === 0) throw Object.assign(new Error('instalaciones requeridas para validar capacidad'), { status: 400 });
+    const sumCap = await computeSumCapacity(instIds);
+    if (sumCap < capacidadEvento) throw Object.assign(new Error(`Capacidad total de instalaciones (${sumCap}) menor que capacidad del evento (${capacidadEvento})`), { status: 400 });
+  }
+
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    // update evento base
+    // update base event
     await repo.updateById(id, evento, conn);
 
-    // --- AVAL handling (delete flag or replace) ---
-    // If client requested delete without uploading replacement, remove existing aval record and unlink file.
+    // --- AVAL handling (preservar/replace/delete) ---
     if (deleteAval && (!files || !files.avalFile)) {
-      // use repository directly to find existing aval for this user+event
-      const avalRepo = await import('../repositories/aval.repository.js');
-      if (typeof avalRepo.findByUserEvent === 'function') {
-        const existingAval = await avalRepo.findByUserEvent(uploaderId, id);
-        if (existingAval && existingAval.avalPdf) {
-          await unlinkFileIfExistsPath(existingAval.avalPdf).catch(()=>{});
-        }
+      const existingAval = await avalService.findByUserEvent?.(uploaderId, id) || null;
+      if (existingAval && existingAval.avalPdf) {
+        await unlinkFileIfExistsPath(existingAval.avalPdf).catch(()=>{});
       }
-      if (typeof avalRepo.deleteByUserEvent === 'function') {
-        await avalRepo.deleteByUserEvent(uploaderId, id, conn);
+      if (avalService.deleteByUserEvent) {
+        await avalService.deleteByUserEvent(uploaderId, id, conn);
       } else {
-        // fallback: attempt DELETE by executing query directly
-        if (avalRepo.default) {
-          // nothing
-        } else {
-          try {
-            const connection = conn || (await import('../db/pool.js')).default;
-            await connection.query('DELETE FROM aval WHERE idUsuario = ? AND idEvento = ?', [uploaderId, id]);
-          } catch(e) { /* noop */ }
-        }
+        try {
+          const avalRepo = await import('../repositories/aval.repository.js');
+          if (avalRepo.deleteByUserEvent) await avalRepo.deleteByUserEvent(uploaderId, id, conn);
+        } catch (e) { /* noop */ }
       }
     }
 
-    // If a new aval file is provided, validate tipoAval and create/replace
     if (files && files.avalFile) {
       if (!tipoAval || !['director_programa','director_docencia'].includes(tipoAval)) {
         throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
@@ -189,30 +221,28 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       await avalService.createAval({ idUsuario: uploaderId, idEvento: id, file: files.avalFile, tipoAval }, conn);
     }
 
-    // instalaciones replace if provided explicitly
+    // instalaciones replace if provided
     if (Array.isArray(evento.instalaciones)) {
       await instEventSvc.unlinkByEvent(id, conn);
-      if (evento.instalaciones.length > 0) {
-        await instEventSvc.linkInstallationsToEvent(id, evento.instalaciones, conn);
-      }
+      if (evento.instalaciones.length > 0) await instEventSvc.linkInstallationsToEvent(id, evento.instalaciones, conn);
     }
 
-    // get existing associations to preserve certificados when needed
-    const existingAssocs = await orgEventService.findByEvent(id, conn); // array of relations
+    // existing org-event associations to manage certificates
+    const existingAssocs = await orgEventService.findByEvent(id, conn);
     const existingMap = {};
-    existingAssocs.forEach(a => { existingMap[String(a.idOrganizacion)] = a; });
+    (existingAssocs || []).forEach(a => { existingMap[String(a.idOrganizacion)] = a; });
 
     const incomingOrgIds = (Array.isArray(organizaciones) ? organizaciones.map(o => String(o.idOrganizacion || o.id || '')).filter(Boolean) : []);
 
-    // remove associations that exist in DB but are not present in incoming payload
-    const toRemove = existingAssocs.map(a => String(a.idOrganizacion)).filter(eid => !incomingOrgIds.includes(eid));
+    // delete associations removed by client
+    const toRemove = (existingAssocs || []).map(a => String(a.idOrganizacion)).filter(eid => !incomingOrgIds.includes(eid));
     if (toRemove.length > 0) {
       for (const oid of toRemove) {
-        await (await import('../repositories/organizationEvent.repository.js')).deleteByOrgEvent(oid, id, conn);
+        await orgEventService.deleteByOrgEvent(oid, id, conn);
       }
     }
 
-    // upsert each incoming organization
+    // upsert incoming orgs
     if (Array.isArray(organizaciones)) {
       for (const org of organizaciones) {
         const orgId = org.idOrganizacion || org.id || null;
@@ -221,7 +251,6 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
         const certFile = files.orgFiles && files.orgFiles[orgId] ? files.orgFiles[orgId] : null;
         const wantsDelete = !!org.deleteCertBeforeUpload;
 
-        // if wantsDelete and no new file uploaded: delete physical file (if existed) and clear DB value
         if (wantsDelete && !certFile) {
           const existing = existingMap[String(orgId)];
           if (existing && existing.certificadoParticipacion) {
@@ -244,7 +273,7 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       }
     }
 
-    // general certificate for event
+    // attach general certificate if present
     if (files && files.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
       await repo.attachGeneralCertificate(id, { certificadoParticipacion: certPath }, conn);
@@ -264,13 +293,14 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
 export async function getAllEvents() {
   return await repo.findAll();
 }
+
 export async function getEventById(id) {
   return await repo.findById(id);
 }
+
 export async function deleteEvent(id) {
   return await repo.deleteById(id);
 }
-
 
 // ============================================
 // NUEVAS FUNCIONES PARA DASHBOARD DE SECRETARIAS

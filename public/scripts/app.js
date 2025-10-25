@@ -13,6 +13,7 @@ import { renderCalendar } from './components/calendar.js';
 import { renderNotifications } from './components/notifications.js';
 import { renderSettings } from './components/settings.js';
 import { renderAuthView, isAuthenticated, bindAuthEvents, handleResetPasswordPage, getCurrentUser } from './auth.js';
+import { renderMyEvents, bindMyEventsListeners } from './components/MyEvents.js';
 
 
 const mount = document.getElementById('app');
@@ -127,17 +128,10 @@ async function renderRoute(route) {
       view = renderProfile(); 
       break;
     
-    case 'my-events': {
-      // ✅ Renderizar Mis Eventos
-      console.log('✅ Renderizando Mis Eventos');
-      const { renderMyEvents, bindMyEventsListeners } = await import('./components/MyEvents.js');
-      view = renderMyEvents();
-      mount.innerHTML = renderShell(view);
-      const headerSlot = qs('#header-slot');
-      if (headerSlot) headerSlot.innerHTML = renderHeader();
-      bindMyEventsListeners();
-      return;
-    }
+    case 'my-events': 
+    view = renderMyEvents(); 
+    break;
+  
     
     case 'organizations': 
       view = await renderOrganizations(); 
