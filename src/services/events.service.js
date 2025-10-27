@@ -304,6 +304,11 @@ export async function getEventsForSecretaria() {
   }
 }
 
+export async function getEventWithDetails(idEvento) {
+  const evt = await repo.findByIdWithDetails(idEvento);
+  return evt;
+}
+
 /**
  * Evalúa un evento (aprobar/rechazar)
  */

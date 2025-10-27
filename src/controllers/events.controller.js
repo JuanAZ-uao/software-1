@@ -190,3 +190,15 @@ export async function sendEvent(req, res) {
     res.status(err.status || 500).json({ error: err.message || 'Error enviando evento' });
   }
 }
+
+export async function getByIdDetailed(req, res) {
+  try {
+    const id = req.params.id;
+    const evento = await svc.getEventWithDetails(id);
+    if (!evento) return res.status(404).json({ error: 'Evento no encontrado' });
+    res.json(evento);
+  } catch (err) {
+    console.error('events.detail.controller.getByIdDetailed error:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Error obteniendo evento con detalles' });
+  }
+}
