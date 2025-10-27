@@ -1,25 +1,24 @@
+// dashboardSecretaria.js
 import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
 import { qs, toast, formatDate } from '../utils/helpers.js';
 
 function escapeHtml(s) {
-  if (!s) return '';
+  if (!s && s !== 0) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 /**
- * Dashboard específico para secretarias académicas
- * Permite revisar, aprobar y rechazar eventos
+ * Render del dashboard de secretaria
  */
 export function renderDashboardSecretaria() {
   const st = getState();
   const user = getCurrentUser();
   const eventos = Array.isArray(st.events) ? st.events : [];
-  
-  // Filtrar solo eventos en estado 'registrado' (pendientes de evaluación)
+
+  // Pendientes en obra: usamos 'enRevision' como estado de revisión
   const eventosPendientes = eventos.filter(e => e.estado === 'enRevision');
-  
-  // Estadísticas para el dashboard
+
   const totalEventos = eventos.length;
   const pendientes = eventosPendientes.length;
   const aprobados = eventos.filter(e => e.estado === 'aprobado').length;
@@ -39,9 +38,13 @@ export function renderDashboardSecretaria() {
     const tipo = evento.tipo || '';
     const fecha = evento.fecha || '';
     const hora = evento.hora || '';
-    const organizador = evento.organizadorNombre || 'N/A';
-    const instalaciones = Array.isArray(evento.instalaciones) ? 
-      evento.instalaciones.map(inst => inst.nombre || inst).join(', ') : 'N/A';
+    // soporta objeto organizador o campos planos
+    const organizador = (evento.organizador && (evento.organizador.nombre || evento.organizador.email))
+      ? `${evento.organizador.nombre || ''} ${evento.organizador.apellidos || ''}`.trim()
+      : (evento.organizadorNombre ? `${evento.organizadorNombre}${evento.organizadorApellidos ? ' ' + evento.organizadorApellidos : ''}`.trim() : 'N/A');
+    const instalaciones = Array.isArray(evento.instalaciones)
+      ? evento.instalaciones.map(inst => (typeof inst === 'object' ? (inst.nombre || inst.label || String(inst.id || '')) : String(inst))).join(', ')
+      : (evento.instalacionesNombres || 'N/A');
 
     return `
       <tr data-evento-id="${escapeHtml(id)}" data-estado="${escapeHtml(evento.estado || '')}">
@@ -110,7 +113,7 @@ export function renderDashboardSecretaria() {
             </div>
             <div>
               <select id="filterEstado" class="select">
-                <option value="registrado">Pendientes</option>
+                <option value="enRevision">Pendientes</option>
                 <option value="aprobado">Aprobados</option>
                 <option value="rechazado">Rechazados</option>
                 <option value="">Todos los estados</option>
@@ -175,9 +178,7 @@ export function renderDashboardSecretaria() {
             <input type="hidden" id="evaluateEventId" name="idEvento">
             <input type="hidden" id="evaluateAction" name="estado">
             
-            <div id="evaluateEventInfo" class="mb-16">
-              <!-- Info del evento se carga dinámicamente -->
-            </div>
+            <div id="evaluateEventInfo" class="mb-16"></div>
 
             <div class="form-group">
               <label for="justificacion">Justificación *</label>
@@ -232,44 +233,39 @@ export function bindDashboardSecretariaEvents() {
     }
   });
 
-  // Limpiar filtros
+  // Clicks generales
   document.addEventListener('click', async (e) => {
     if (e.target?.id === 'clearFilters') {
       document.getElementById('searchEvents').value = '';
       document.getElementById('filterTipo').value = '';
-      document.getElementById('filterEstado').value = 'registrado';
+      document.getElementById('filterEstado').value = 'enRevision';
       filterEvents();
       return;
     }
 
-    // Actualizar eventos
     if (e.target?.id === 'refreshEvents') {
       await loadEventosForSecretaria();
       return;
     }
 
-    // Revisar evento
     if (e.target?.classList.contains('review-event')) {
       const eventId = e.target.getAttribute('data-id');
       await openReviewModal(eventId);
       return;
     }
 
-    // Aprobar evento
     if (e.target?.classList.contains('approve-event')) {
       const eventId = e.target.getAttribute('data-id');
       openEvaluateModal(eventId, 'aprobado');
       return;
     }
 
-    // Rechazar evento
     if (e.target?.classList.contains('reject-event')) {
       const eventId = e.target.getAttribute('data-id');
       openEvaluateModal(eventId, 'rechazado');
       return;
     }
 
-    // Cerrar modales
     if (e.target?.id === 'closeReviewModal') {
       document.getElementById('reviewModal').classList.remove('open');
       return;
@@ -297,9 +293,7 @@ export function bindDashboardSecretariaEvents() {
       if (actaGroup) {
         const isApproval = e.target.value === 'aprobado';
         actaGroup.style.display = isApproval ? 'block' : 'none';
-        if (actaInput) {
-          actaInput.required = isApproval;
-        }
+        if (actaInput) actaInput.required = isApproval;
       }
     }
   });
@@ -314,19 +308,18 @@ function filterEvents() {
   const estadoFilter = document.getElementById('filterEstado')?.value || '';
 
   const rows = document.querySelectorAll('#eventosTable tbody tr');
-  
+
   rows.forEach(row => {
     const texto = row.textContent.toLowerCase();
     const matchSearch = texto.includes(search);
-    
-    // Obtener datos del evento para filtros
+
     const eventId = row.getAttribute('data-evento-id');
     const st = getState();
     const evento = st.events?.find(e => String(e.idEvento || e.id) === String(eventId));
-    
+
     const matchTipo = !tipoFilter || evento?.tipo === tipoFilter;
     const matchEstado = !estadoFilter || evento?.estado === estadoFilter;
-    
+
     const shouldShow = matchSearch && matchTipo && matchEstado;
     row.style.display = shouldShow ? '' : 'none';
   });
@@ -338,23 +331,22 @@ function filterEvents() {
 async function loadEventosForSecretaria() {
   try {
     console.log('🔄 Recargando eventos...');
-    
+
     const response = await fetch('/api/events/for-secretaria');
     if (response.ok) {
       const eventos = await response.json();
       console.log('✅ Eventos recargados:', eventos.length);
-      
+
       const st = getState();
       setState({ ...st, events: eventos });
-      
-      // Re-renderizar SOLO la tabla según el filtro actual
+
       const tbody = document.querySelector('#eventosTable tbody');
       if (tbody) {
-        const estadoFilter = document.getElementById('filterEstado')?.value || 'registrado';
-        const eventosFiltrados = estadoFilter 
-          ? eventos.filter(e => e.estado === estadoFilter) 
-          : eventos.filter(e => e.estado === 'registrado');
-        
+        const estadoFilter = document.getElementById('filterEstado')?.value || 'enRevision';
+        const eventosFiltrados = estadoFilter
+          ? eventos.filter(e => e.estado === estadoFilter)
+          : eventos.filter(e => e.estado === 'enRevision');
+
         if (eventosFiltrados.length === 0) {
           tbody.innerHTML = '<tr><td colspan="5" class="text-center muted">No hay eventos con este estado</td></tr>';
         } else {
@@ -364,9 +356,12 @@ async function loadEventosForSecretaria() {
             const tipo = evento.tipo || '';
             const fecha = evento.fecha || '';
             const hora = evento.hora || '';
-            const organizador = evento.organizadorNombre || 'N/A';
-            const instalaciones = Array.isArray(evento.instalaciones) ? 
-              evento.instalaciones.map(inst => inst.nombre || inst).join(', ') : 'N/A';
+            const organizador = (evento.organizador && (evento.organizador.nombre || evento.organizador.email))
+              ? `${evento.organizador.nombre || ''} ${evento.organizador.apellidos || ''}`.trim()
+              : (evento.organizadorNombre ? `${evento.organizadorNombre}${evento.organizadorApellidos ? ' ' + evento.organizadorApellidos : ''}`.trim() : 'N/A');
+            const instalaciones = Array.isArray(evento.instalaciones)
+              ? evento.instalaciones.map(inst => (typeof inst === 'object' ? (inst.nombre || inst.label || String(inst.id || '')) : String(inst))).join(', ')
+              : (evento.instalacionesNombres || 'N/A');
 
             return `
               <tr data-evento-id="${escapeHtml(id)}" data-estado="${escapeHtml(evento.estado || '')}">
@@ -401,11 +396,10 @@ async function loadEventosForSecretaria() {
             `;
           }).join('');
         }
-        
-        // ✅ Aplicar filtros después de recargar
+
         filterEvents();
       }
-      
+
       console.log('✅ Tabla actualizada');
       toast('Eventos actualizados', 'success');
     } else {
@@ -424,8 +418,14 @@ async function loadEventosForSecretaria() {
 async function openReviewModal(eventId) {
   try {
     console.log('🔍 Cargando evento:', eventId);
-    
-    const response = await fetch(`/api/events/${eventId}`);
+
+    // intentar endpoint detallado y fallback al básico
+    let response = await fetch(`/api/events/${eventId}/details`);
+    if (!response.ok) {
+      console.warn(`/details no disponible (${response.status}), intentando /api/events/${eventId}`);
+      response = await fetch(`/api/events/${eventId}`);
+    }
+
     if (!response.ok) {
       console.error('❌ Error en respuesta:', response.status);
       toast('Error al cargar evento', 'error');
@@ -434,33 +434,82 @@ async function openReviewModal(eventId) {
 
     const evento = await response.json();
     console.log('✅ Evento cargado completo:', evento);
-    
+
     const modal = document.getElementById('reviewModal');
     const content = document.getElementById('reviewModalContent');
-    
+
     if (!modal || !content) {
       console.error('❌ Modal o contenido no encontrado');
       return;
     }
-    
-    // Procesar instalaciones
+
+    // Procesar instalaciones (normaliza varios formatos)
     let instalacionesHTML = 'No especificadas';
     if (evento.instalaciones && Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
-      instalacionesHTML = evento.instalaciones.map(inst => 
-        `<span class="badge secondary">${escapeHtml(inst.nombre || inst)}</span>`
-      ).join(' ');
+      instalacionesHTML = evento.instalaciones.map(inst => {
+        const name = (typeof inst === 'object') ? (inst.nombre || inst.label || inst.nombreInstalacion || inst.name) : inst;
+        return `<span class="badge secondary">${escapeHtml(name || String(inst))}</span>`;
+      }).join(' ');
     } else if (evento.instalacionesNombres) {
       instalacionesHTML = evento.instalacionesNombres.split(',').map(nombre =>
         `<span class="badge secondary">${escapeHtml(nombre.trim())}</span>`
       ).join(' ');
+    } else if (evento.instalacionesIds && Array.isArray(evento.instalacionesIds) && evento.instalacionesIds.length) {
+      instalacionesHTML = evento.instalacionesIds.map(id => `<span class="badge secondary">${escapeHtml(String(id))}</span>`).join(' ');
     }
-    
-    // Formatear nombre del organizador
-    const organizadorNombre = evento.organizadorNombre || 
-      (evento.organizadorApellidos ? 
-        `${evento.organizadorNombre || ''} ${evento.organizadorApellidos || ''}`.trim() : 
-        'N/A');
-    
+
+    // Formatear nombre del organizador (soporta objeto o campos planos)
+    let organizadorNombre = null;
+    let organizadorEmail = '';
+    let organizadorTelefono = '';
+
+    if (evento.organizador && typeof evento.organizador === 'object') {
+      organizadorNombre = evento.organizador.nombre || evento.organizadorNombre || null;
+      organizadorEmail = evento.organizador.email || evento.organizadorEmail || '';
+      organizadorTelefono = evento.organizador.telefono || evento.organizadorTelefono || '';
+      if (!organizadorNombre && (evento.organizador.apellidos || evento.organizador.apellido)) {
+        organizadorNombre = `${evento.organizador.nombre || ''} ${evento.organizador.apellidos || evento.organizador.apellido || ''}`.trim();
+      }
+    } else {
+      const nombrePlano = evento.organizadorNombre || null;
+      const apellidosPlano = evento.organizadorApellidos || null;
+      if (nombrePlano || apellidosPlano) {
+        organizadorNombre = `${nombrePlano || ''} ${apellidosPlano || ''}`.trim();
+      } else if (evento.idUsuario && (evento.organizadorEmail || evento.organizadorTelefono || evento.organizador)) {
+        organizadorNombre = evento.organizadorNombre || evento.organizador || 'N/A';
+        organizadorEmail = evento.organizadorEmail || '';
+        organizadorTelefono = evento.organizadorTelefono || '';
+      } else {
+        // último recurso: intentar leer desde evento.organizador.* si vino con otro shape
+        organizadorNombre = evento.organizadorNombre || evento.organizador || 'N/A';
+        organizadorEmail = evento.organizadorEmail || '';
+        organizadorTelefono = evento.organizadorTelefono || '';
+      }
+    }
+
+    if (!organizadorNombre) organizadorNombre = 'N/A';
+    if (!organizadorEmail) organizadorEmail = '';
+    if (!organizadorTelefono) organizadorTelefono = '';
+
+    // Normalizar organizaciones (puede venir como array de organizacion u objetos con association)
+    let organizacionesHTML = '';
+    if (Array.isArray(evento.organizaciones) && evento.organizaciones.length) {
+      const orgItems = evento.organizaciones.map(o => {
+        // organización puede venir en o.organizacion o directamente o.nombre
+        const orgData = o.organizacion || o;
+        const nombreOrg = orgData?.nombre || orgData?.nombreOrganizacion || o.nombre || 'Organización';
+        const participante = o.participante || o.nombreEncargado || o.encargado || orgData?.contacto || null;
+        return `<div class="org-item"><strong>${escapeHtml(nombreOrg)}</strong><div class="muted">${participante ? 'Participante: ' + escapeHtml(participante) : 'Representante legal'}</div></div>`;
+      });
+      organizacionesHTML = `<div class="organizaciones-list">${orgItems.join('')}</div>`;
+    }
+
+    // Aval y certificados (acepta varios shapes)
+    const avalPdf = evento.avalPdf || (evento.aval && (evento.aval.avalPdf || evento.aval.path)) || null;
+    const tipoAval = evento.tipoAval || (evento.aval && (evento.aval.tipoAval || evento.aval.tipo)) || null;
+    const certificadoParticipacion = evento.certificadoParticipacion || evento.certificado || null;
+
+    // Inject HTML
     content.innerHTML = `
       <div class="evento-review">
         <div class="grid gap-16">
@@ -480,11 +529,11 @@ async function openReviewModal(eventId) {
             </div>
             <div class="info-group">
               <label>Hora inicio:</label>
-              <p>${escapeHtml(evento.hora || 'N/A')}</p>
+              <p>${escapeHtml(evento.hora || evento.horaInicio || 'N/A')}</p>
             </div>
             <div class="info-group">
               <label>Hora fin:</label>
-              <p>${escapeHtml(evento.horaFin || 'N/A')}</p>
+              <p>${escapeHtml(evento.horaFin || evento.hora_fin || 'N/A')}</p>
             </div>
             <div class="info-group">
               <label>Capacidad:</label>
@@ -500,11 +549,11 @@ async function openReviewModal(eventId) {
             </div>
             <div class="info-group">
               <label>Email:</label>
-              <p><a href="mailto:${escapeHtml(evento.organizadorEmail || '')}">${escapeHtml(evento.organizadorEmail || 'N/A')}</a></p>
+              <p><a href="mailto:${escapeHtml(organizadorEmail || '')}">${escapeHtml(organizadorEmail || 'N/A')}</a></p>
             </div>
             <div class="info-group">
               <label>Teléfono:</label>
-              <p><a href="tel:${escapeHtml(evento.organizadorTelefono || '')}">${escapeHtml(evento.organizadorTelefono || 'N/A')}</a></p>
+              <p><a href="tel:${escapeHtml(organizadorTelefono || '')}">${escapeHtml(organizadorTelefono || 'N/A')}</a></p>
             </div>
           </div>
         </div>
@@ -513,7 +562,7 @@ async function openReviewModal(eventId) {
           <h3>📍 Ubicación e Instalaciones</h3>
           <div class="info-group">
             <label>Ubicación:</label>
-            <p>${escapeHtml(evento.ubicacion || 'No especificada')}</p>
+            <p>${escapeHtml(evento.ubicacion || evento.lugar || 'No especificada')}</p>
           </div>
           <div class="info-group">
             <label>Instalaciones reservadas:</label>
@@ -532,31 +581,22 @@ async function openReviewModal(eventId) {
           </div>
         ` : ''}
         
-        ${evento.organizaciones && evento.organizaciones.length ? `
+        ${organizacionesHTML ? `
           <div class="mt-16">
             <h3>🏢 Organizaciones Participantes</h3>
-            <div class="organizaciones-list">
-              ${evento.organizaciones.map(org => `
-                <div class="org-item">
-                  <strong>${escapeHtml(org.nombre)}</strong>
-                  <div class="muted">
-                    ${org.participante ? `Participante: ${escapeHtml(org.participante)}` : 'Representante legal'}
-                  </div>
-                </div>
-              `).join('')}
-            </div>
+            ${organizacionesHTML}
           </div>
         ` : ''}
         
         <div class="mt-16">
           <h3>📎 Documentos Adjuntos</h3>
-          ${evento.avalPdf ? `
+          ${avalPdf ? `
             <div class="documento-item">
               <div>
                 <strong>📄 Aval de Aprobación</strong>
-                <div class="muted">Tipo: ${escapeHtml(evento.tipoAval === 'director_programa' ? 'Director de Programa' : evento.tipoAval === 'director_docencia' ? 'Director de Docencia' : evento.tipoAval || 'N/A')}</div>
+                <div class="muted">Tipo: ${escapeHtml(tipoAval === 'director_programa' ? 'Director de Programa' : tipoAval === 'director_docencia' ? 'Director de Docencia' : tipoAval || 'N/A')}</div>
               </div>
-              <a href="${escapeHtml(evento.avalPdf)}" target="_blank" class="btn small primary">
+              <a href="${escapeHtml(avalPdf)}" target="_blank" class="btn small primary">
                 📥 Ver PDF
               </a>
             </div>
@@ -566,12 +606,12 @@ async function openReviewModal(eventId) {
             </div>
           `}
           
-          ${evento.certificadoParticipacion ? `
+          ${certificadoParticipacion ? `
             <div class="documento-item">
               <div>
                 <strong>📜 Certificado de Participación</strong>
               </div>
-              <a href="${escapeHtml(evento.certificadoParticipacion)}" target="_blank" class="btn small secondary">
+              <a href="${escapeHtml(certificadoParticipacion)}" target="_blank" class="btn small secondary">
                 📥 Ver PDF
               </a>
             </div>
@@ -592,10 +632,10 @@ async function openReviewModal(eventId) {
         </div>
       </div>
     `;
-    
+
     modal.classList.add('open');
     console.log('✅ Modal abierto con todos los datos');
-    
+
   } catch (error) {
     console.error('❌ Error completo:', error);
     toast('Error al cargar evento', 'error');
@@ -608,7 +648,7 @@ async function openReviewModal(eventId) {
 function openEvaluateModal(eventId, action) {
   const st = getState();
   const evento = st.events?.find(e => String(e.idEvento || e.id) === String(eventId));
-  
+
   if (!evento) {
     toast('Evento no encontrado', 'error');
     return;
@@ -622,38 +662,36 @@ function openEvaluateModal(eventId, action) {
   const actaGroup = document.getElementById('actaGroup');
   const actaInput = document.getElementById('actaAprobacion');
   const submitBtn = document.getElementById('submitEvaluate');
-  
-  // Configurar modal según la acción
+
   if (action === 'aprobado') {
     title.textContent = '✅ Aprobar Evento';
     submitBtn.textContent = 'Aprobar Evento';
     submitBtn.className = 'btn success';
-    actaGroup.style.display = 'block';
+    if (actaGroup) actaGroup.style.display = 'block';
     if (actaInput) actaInput.required = true;
   } else {
     title.textContent = '❌ Rechazar Evento';
     submitBtn.textContent = 'Rechazar Evento';
     submitBtn.className = 'btn danger';
-    actaGroup.style.display = 'none';
+    if (actaGroup) actaGroup.style.display = 'none';
     if (actaInput) actaInput.required = false;
   }
-  
+
   actionInput.value = action;
   eventIdInput.value = eventId;
-  
+
   eventInfo.innerHTML = `
     <div class="evento-info">
-      <h4>${escapeHtml(evento.nombre)}</h4>
+      <h4>${escapeHtml(evento.nombre || '')}</h4>
       <div class="muted">
-        ${escapeHtml(evento.tipo)} • ${escapeHtml(evento.fecha)} • ${escapeHtml(evento.hora)}
+        ${escapeHtml(evento.tipo || '')} • ${escapeHtml(evento.fecha || '')} • ${escapeHtml(evento.hora || '')}
       </div>
     </div>
   `;
-  
-  // Limpiar formulario
+
   document.getElementById('justificacion').value = '';
   if (actaInput) actaInput.value = '';
-  
+
   modal.classList.add('open');
 }
 
@@ -665,11 +703,10 @@ async function submitEvaluation(form) {
     const submitBtn = document.getElementById('submitEvaluate');
     submitBtn.disabled = true;
     submitBtn.textContent = 'Procesando...';
-    
+
     const formData = new FormData(form);
     const action = formData.get('estado');
-    
-    // Validar acta si es aprobación
+
     if (action === 'aprobado') {
       const actaFile = formData.get('actaAprobacion');
       if (!actaFile || actaFile.size === 0) {
@@ -678,7 +715,7 @@ async function submitEvaluation(form) {
         submitBtn.textContent = 'Aprobar Evento';
         return;
       }
-      
+
       if (actaFile.type !== 'application/pdf') {
         toast('El acta debe ser un archivo PDF', 'error');
         submitBtn.disabled = false;
@@ -686,60 +723,53 @@ async function submitEvaluation(form) {
         return;
       }
     }
-    
-    // Agregar idSecretaria del usuario actual
+
     const currentUser = getCurrentUser();
     if (currentUser && currentUser.id) {
       formData.append('idSecretaria', currentUser.id);
     }
-    
+
     console.log('📤 Enviando evaluación:', {
       idEvento: formData.get('idEvento'),
       estado: action,
       justificacion: formData.get('justificacion'),
       tieneActa: formData.get('actaAprobacion')?.name || 'No'
     });
-    
+
     const response = await fetch('/api/events/evaluate', {
       method: 'POST',
       body: formData
     });
-    
+
     if (response.ok) {
       const result = await response.json();
       const mensaje = action === 'aprobado' ? 'Evento aprobado exitosamente' : 'Evento rechazado';
-      
-      // ✅ NUEVO: Cerrar modal primero
+
       document.getElementById('evaluateModal').classList.remove('open');
-      
-      // ✅ NUEVO: Mostrar toast
       toast(mensaje, 'success');
-      
-      // ✅ NUEVO: Recargar eventos automáticamente
+
       console.log('🔄 Recargando eventos después de evaluación...');
       await loadEventosForSecretaria();
-      
-      // ✅ NUEVO: Actualizar estadísticas en tiempo real
+
       const st = getState();
       const eventos = Array.isArray(st.events) ? st.events : [];
-      const pendientes = eventos.filter(e => e.estado === 'registrado').length;
+      const pendientes = eventos.filter(e => e.estado === 'enRevision').length;
       const aprobados = eventos.filter(e => e.estado === 'aprobado').length;
       const rechazados = eventos.filter(e => e.estado === 'rechazado').length;
-      
-      // ✅ Actualizar contadores en las cards de estadísticas
+
       const statsCards = document.querySelectorAll('.secretaria-dashboard .stat .kpi');
       if (statsCards.length === 4) {
-        statsCards[0].textContent = eventos.length; // Total
-        statsCards[1].textContent = pendientes;     // Pendientes
-        statsCards[2].textContent = aprobados;      // Aprobados
-        statsCards[3].textContent = rechazados;     // Rechazados
+        statsCards[0].textContent = eventos.length;
+        statsCards[1].textContent = pendientes;
+        statsCards[2].textContent = aprobados;
+        statsCards[3].textContent = rechazados;
       }
-      
+
       console.log('✅ Vista actualizada automáticamente');
       console.log('📊 Estadísticas:', { total: eventos.length, pendientes, aprobados, rechazados });
-      
+
     } else {
-      const error = await response.json();
+      const error = await response.json().catch(() => ({}));
       toast(error.error || error.message || 'Error al evaluar evento', 'error');
     }
   } catch (error) {
@@ -747,8 +777,19 @@ async function submitEvaluation(form) {
     toast('Error al evaluar evento', 'error');
   } finally {
     const submitBtn = document.getElementById('submitEvaluate');
-    submitBtn.disabled = false;
-    const action = document.getElementById('evaluateAction').value;
-    submitBtn.textContent = action === 'aprobado' ? 'Aprobar Evento' : 'Rechazar Evento';
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      const action = document.getElementById('evaluateAction')?.value;
+      submitBtn.textContent = action === 'aprobado' ? 'Aprobar Evento' : 'Rechazar Evento';
+    }
   }
 }
+
+// Export helpers for other modules if needed
+export {
+  loadEventosForSecretaria,
+  openReviewModal,
+  openEvaluateModal,
+  submitEvaluation,
+  filterEvents
+};

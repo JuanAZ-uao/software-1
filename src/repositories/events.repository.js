@@ -330,3 +330,107 @@ export async function getAllEventsWithDetails() {
   return detailed;
 }
 
+// src/repositories/events.repository.js
+// Añadir/importar pool al inicio del archivo si no está
+// import pool from '../db/pool.js';
+
+export async function findByIdWithDetails(idEvento) {
+  // 1) traer evento base
+  const [[eventoRow]] = await pool.query('SELECT * FROM evento WHERE idEvento = ? LIMIT 1', [idEvento]);
+  if (!eventoRow) return null;
+
+  // 2) organizador (desde evento.idUsuario)
+  let organizador = null;
+  if (eventoRow.idUsuario) {
+    const [uRows] = await pool.query('SELECT idUsuario, nombre, apellidos, email, telefono FROM usuario WHERE idUsuario = ? LIMIT 1', [eventoRow.idUsuario]);
+    if (uRows && uRows.length) organizador = uRows[0];
+    else {
+      // fallback si tu schema usa id en vez de idUsuario
+      const [uRows2] = await pool.query('SELECT id, nombre, apellidos, email, telefono FROM usuario WHERE id = ? LIMIT 1', [eventoRow.idUsuario]);
+      if (uRows2 && uRows2.length) organizador = uRows2[0];
+    }
+  }
+
+  // 3) instalaciones asociadas (ids + nombres + capacidad)
+  const [instRows] = await pool.query(`
+    SELECT i.idInstalacion, i.nombre, i.capacidad
+    FROM instalacion i
+    JOIN evento_instalacion ei ON i.idInstalacion = ei.idInstalacion
+    WHERE ei.idEvento = ?
+  `, [idEvento]);
+
+  // 4) aval principal (si existe)
+  const [avalRows] = await pool.query('SELECT * FROM aval WHERE idEvento = ? AND principal = 1 LIMIT 1', [idEvento]);
+  let aval = null;
+  if (avalRows && avalRows.length) aval = avalRows[0];
+  else {
+    const [avalAny] = await pool.query('SELECT * FROM aval WHERE idEvento = ? LIMIT 1', [idEvento]);
+    if (avalAny && avalAny.length) aval = avalAny[0];
+  }
+
+  // 5) organizaciones asociadas (tabla asociativa: buscar candidates por nombre común)
+  // intentamos varias tablas comunes para la asociación org-evento
+  let orgAssocRows = [];
+  const assocQueries = [
+    'SELECT * FROM organization_event WHERE idEvento = ?',
+    'SELECT * FROM evento_organizacion WHERE idEvento = ?',
+    'SELECT * FROM organizacion_evento WHERE idEvento = ?',
+    'SELECT * FROM organization_evento WHERE idEvento = ?',
+    'SELECT * FROM organization_event_assoc WHERE idEvento = ?',
+    'SELECT * FROM organization_event WHERE id_evento = ?' // alternativa
+  ];
+  for (const q of assocQueries) {
+    try {
+      const [rows] = await pool.query(q, [idEvento]);
+      if (rows && rows.length) { orgAssocRows = rows; break; }
+    } catch (err) {
+      // tabla/columna no existe: seguir probando otras consultas
+    }
+  }
+
+  // Mapear asociaciones a datos de organización reales
+  const organizaciones = [];
+  for (const assoc of orgAssocRows) {
+    const idOrg = assoc.idOrganizacion || assoc.organizacionId || assoc.org_id || assoc.id_organizacion || assoc.idOrg || assoc.id;
+    if (!idOrg) {
+      organizaciones.push({ association: assoc });
+      continue;
+    }
+    let org = null;
+    try {
+      const [orgRows] = await pool.query('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal FROM organizacion WHERE idOrganizacion = ? LIMIT 1', [idOrg]);
+      if (orgRows && orgRows.length) org = orgRows[0];
+      else {
+        const [orgAlt] = await pool.query('SELECT id, nombre, sectorEconomico, representanteLegal FROM organizacion WHERE id = ? LIMIT 1', [idOrg]);
+        if (orgAlt && orgAlt.length) org = orgAlt[0];
+      }
+    } catch (err) {
+      // ignore
+    }
+
+    organizaciones.push({
+      association: assoc,
+      organizacion: org || null,
+      participante: assoc.participante || assoc.nombreEncargado || assoc.encargado || null,
+      esRepresentanteLegal: !!(assoc.esRepresentanteLegal === 'si' || assoc.esRepresentanteLegal === true || String(assoc.esRepresentanteLegal).toLowerCase() === 'true'),
+      certificadoPath: assoc.certificadoParticipacion || assoc.certificado || assoc.cert_path || null
+    });
+  }
+
+  // 6) normalizar salida
+  const evento = {
+    ...eventoRow,
+    capacidad: eventoRow.capacidad != null ? eventoRow.capacidad : null,
+    organizador: organizador ? {
+      idUsuario: organizador.idUsuario || organizador.id || null,
+      nombre: `${(organizador.nombre || '')} ${(organizador.apellidos || '')}`.trim() || null,
+      email: organizador.email || '',
+      telefono: organizador.telefono || ''
+    } : { idUsuario: null, nombre: null, email: '', telefono: '' },
+    instalaciones: (instRows || []).map(i => ({ idInstalacion: i.idInstalacion || i.id || null, nombre: i.nombre || '', capacidad: i.capacidad != null ? Number(i.capacidad) : null })),
+    aval: aval ? { idAval: aval.idAval || aval.id || null, avalPdf: aval.avalPdf || aval.path || null, tipoAval: aval.tipoAval || aval.tipo || null } : null,
+    organizaciones
+  };
+
+  return evento;
+}
