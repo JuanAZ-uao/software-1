@@ -54,3 +54,25 @@ export async function createAval({ idUsuario, idEvento, file, tipoAval = null },
 export async function findByEvent(idEvento) {
   return await repo.findByEvent(idEvento);
 }
+
+/**
+ * Actualiza el tipoAval de la fila principal (principal = 1) para un evento.
+ * Si no existe una fila principal, inserta una nueva fila mínima (sin archivo) y la marca principal.
+ */
+export async function updateTipo({ idEvento, tipoAval }, conn) {
+  const connection = conn || pool;
+
+  // Asegura que tipoAval sea válido en caller; aquí no revalidamos exhaustivamente.
+  // Intentar actualizar primero
+  const [res] = await connection.query('UPDATE aval SET tipoAval = ? WHERE idEvento = ? AND principal = 1', [tipoAval, idEvento]);
+  if (res.affectedRows > 0) {
+    const [rows] = await connection.query('SELECT * FROM aval WHERE idEvento = ? AND principal = 1 LIMIT 1', [idEvento]);
+    return rows[0] || null;
+  }
+
+  // Si no existía, insertar una fila mínima (sin archivo) y marcar principal
+  const insertSql = 'INSERT INTO aval (idEvento, avalPdf, tipoAval, principal, creadoEn) VALUES (?, NULL, ?, 1, NOW())';
+  await connection.query(insertSql, [idEvento, tipoAval]);
+  const [rows2] = await connection.query('SELECT * FROM aval WHERE idEvento = ? AND principal = 1 LIMIT 1', [idEvento]);
+  return rows2[0] || null;
+}

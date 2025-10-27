@@ -2,7 +2,6 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
 import { apiNotFoundHandler, errorHandler } from './src/core/middlewares/index.js';
 import { usersRouter } from './src/routes/users.routes.js';
 import { authRouter } from './src/routes/auth.routes.js';

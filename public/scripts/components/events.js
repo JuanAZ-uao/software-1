@@ -6,14 +6,15 @@ import { navigateTo } from '../utils/router.js';
 
 /*
   Events UI module (completo)
-  - Soporta selección de instalaciones mediante checkboxes (más usable que multi-select)
+  - Soporta selección de instalaciones mediante checkboxes
+  - Valida que capacidad del evento sea obligatoria y no exceda la suma de capacidades de instalaciones seleccionadas
   - Envía en FormData:
       - 'evento' (JSON) que contiene `instalaciones: [idInstalacion, ...]`
       - 'tipoAval', 'avalPdf'
       - 'organizaciones' (JSON) y archivos dinámicos 'certificado_org_<id>'
       - 'certificadoParticipacion' (opcional)
   - Mantiene editor inline de organizaciones, control de permisos por created_by
-  - Valida y limpia archivos, maneja transacciones front->backend
+  - Actualiza UI de resumen de capacidades en tiempo real
 */
 
 const SECTORES_ECONOMICOS = [
@@ -53,6 +54,36 @@ async function ensureLookups() {
   }
 }
 
+/* ---------- helpers: capacity utilities ---------- */
+function buildInstallationsMap() {
+  const inst = Array.isArray(getState().installations) ? getState().installations : [];
+  const map = {};
+  for (const i of inst) {
+    const id = String(i.idInstalacion || i.id || '');
+    map[id] = {
+      id,
+      capacidad: Number(i.capacidad || 0),
+      nombre: i.nombre || i.ubicacion || ''
+    };
+  }
+  return map;
+}
+function calcTotalCapacityFor(instIds = []) {
+  const map = buildInstallationsMap();
+  return instIds.reduce((s, id) => s + (map[String(id)] ? Number(map[String(id)].capacidad || 0) : 0), 0);
+}
+function updateCapSummaryUI() {
+  const form = document.querySelector('#eventForm');
+  if (!form) return;
+  const selected = Array.from(form.querySelectorAll('.inst-checkbox:checked')).map(cb => cb.value);
+  const total = calcTotalCapacityFor(selected);
+  const capSummary = document.getElementById('capSummary');
+  if (capSummary) {
+    capSummary.textContent = `Capacidad total instalaciones seleccionadas: ${total}`;
+  }
+}
+
+/* ---------- render (main) ---------- */
 export async function renderEvents() {
   await ensureLookups();
   const st = getState();
@@ -67,18 +98,19 @@ export async function renderEvents() {
       <td>${escapeHtml(e.tipo || '')}</td>
       <td>${escapeHtml(e.fecha || '')} ${escapeHtml(e.hora || '')}</td>
       <td>${escapeHtml(e.ubicacion || '')}</td>
-      <td>${(user && String(e.idUsuario)===String(user.id)) ? `<button class="btn small" data-edit="${escapeHtml(e.idEvento||e.id||'')}">Editar</button>` : ''}</td>
+      <td></td>
     </tr>
   `).join('') : '<tr><td colspan="5">No hay eventos</td></tr>';
 
   const instCheckboxesHtml = installations.map(i => {
     const id = escapeHtml(i.idInstalacion || i.id || '');
     const label = escapeHtml(i.nombre || i.ubicacion || i.descripcion || i.ciudad || `Instalación ${id}`);
+    const cap = (i.capacidad !== undefined && i.capacidad !== null) ? ` (capacidad: ${escapeHtml(String(i.capacidad))})` : '';
     return `
       <div class="inst-item" style="display:flex; align-items:center; gap:8px; padding:4px 0;">
         <label style="display:flex; align-items:center; gap:8px;">
           <input type="checkbox" class="inst-checkbox" value="${id}" data-inst="${id}" />
-          <span>${label}</span>
+          <span>${label}${cap}</span>
         </label>
       </div>
     `;
@@ -121,9 +153,6 @@ export async function renderEvents() {
   return `
     <div class="grid">
       <div class="card col-8 col-12">
-        <div class="card-head"><strong>Eventos</strong>
-          <div class="flex gap-8"><input id="eventSearch" class="input" placeholder="Buscar..." style="max-width:240px"></div>
-        </div>
         <div class="card-body table-wrap">
           <table class="table" id="eventsTable">
             <thead><tr><th>Nombre</th><th>Tipo</th><th>Fecha</th><th>Ubicación</th><th></th></tr></thead>
@@ -156,7 +185,7 @@ export async function renderEvents() {
 
             <div class="flex gap-12">
               <div style="flex:1"><label class="label">Hora fin</label><input class="input" name="horaFin" type="time" required></div>
-              <div style="flex:1"><label class="label">Capacidad (opcional)</label><input class="input" name="capacidad" type="number" min="1"></div>
+              <div style="flex:1"><label class="label">Capacidad</label><input class="input" name="capacidad" id="capacidadEvento" type="number" min="1" required></div>
             </div>
 
             <div>
@@ -166,6 +195,7 @@ export async function renderEvents() {
               </div>
               <div style="margin-top:8px;">
                 <label style="cursor:pointer;"><input type="checkbox" id="instSelectAll" /> Seleccionar/Deseleccionar todas</label>
+                <div id="capSummary" style="margin-top:6px; color:#666;">Capacidad total instalaciones seleccionadas: 0</div>
               </div>
             </div>
 
@@ -264,13 +294,6 @@ function rebuildOrgList(orgs) {
 function bindEventListenersInner() {
   // INPUT delegated
   document.addEventListener('input', (e) => {
-    if (e.target?.id === 'eventSearch') {
-      const q = e.target.value.toLowerCase();
-      document.querySelectorAll('#eventsTable tbody tr').forEach(tr => {
-        tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
-      return;
-    }
     if (e.target?.id === 'orgFilter') {
       const q = e.target.value.toLowerCase();
       document.querySelectorAll('#orgSelectList .org-item').forEach(div => {
@@ -308,6 +331,13 @@ function bindEventListenersInner() {
     if (e.target?.id === 'instSelectAll') {
       const checked = !!e.target.checked;
       document.querySelectorAll('.inst-checkbox').forEach(cb => cb.checked = checked);
+      updateCapSummaryUI();
+      return;
+    }
+
+    // installation checkbox change should update capacity summary
+    if (e.target && e.target.classList && e.target.classList.contains('inst-checkbox')) {
+      updateCapSummaryUI();
       return;
     }
   });
@@ -326,6 +356,7 @@ function bindEventListenersInner() {
       const form = document.querySelector('#eventForm');
       if (form) form.reset();
       const block = document.querySelector('#evtOrgBlock'); if (block) block.style.display = 'none';
+      updateCapSummaryUI();
       return;
     }
 
@@ -460,6 +491,14 @@ function bindEventListenersInner() {
       const instalacionesIds = instalacionCheckboxes.filter(cb => cb.checked).map(cb => cb.value).filter(Boolean);
       if (!instalacionesIds || instalacionesIds.length === 0) { toast('Seleccione al menos una instalación', 'error'); throw new Error('validation'); }
 
+      // capacidad required and validate against installations capacities
+      const capacidadVal = fd.get('capacidad');
+      if (!capacidadVal) { toast('Capacidad del evento requerida', 'error'); throw new Error('validation'); }
+      const capacidadNum = Number(capacidadVal);
+      if (!Number.isFinite(capacidadNum) || capacidadNum <= 0) { toast('Capacidad debe ser un número mayor que 0', 'error'); throw new Error('validation'); }
+      const totalInstCap = calcTotalCapacityFor(instalacionesIds);
+      if (capacidadNum > totalInstCap) { toast(`Capacidad del evento (${capacidadNum}) excede la suma de capacidades de instalaciones seleccionadas (${totalInstCap})`, 'error'); throw new Error('validation'); }
+
       const tipoAval = fd.get('tipoAval') || '';
       if (!avalFile) { toast('El aval en PDF es obligatorio', 'error'); throw new Error('validation'); }
       if (!tipoAval) { toast('Seleccione el tipo de aval', 'error'); throw new Error('validation'); }
@@ -480,7 +519,7 @@ function bindEventListenersInner() {
         hora: raw.hora,
         horaFin: raw.horaFin,
         ubicacion: raw.ubicacion || '',
-        capacidad: raw.capacidad ? Number(raw.capacidad) : null,
+        capacidad: capacidadNum,
         descripcion: raw.descripcion || ''
       };
 
@@ -536,6 +575,7 @@ function bindEventListenersInner() {
       toast('Evento creado', 'success');
       evtForm.reset();
       const evtOrgBlock = document.querySelector('#evtOrgBlock'); if (evtOrgBlock) evtOrgBlock.style.display = 'none';
+      updateCapSummaryUI();
 
       const tbody = document.querySelector('#eventsTable tbody');
       if (tbody) {
@@ -546,7 +586,7 @@ function bindEventListenersInner() {
               <td>${escapeHtml(ev.tipo || '')}</td>
               <td>${escapeHtml(ev.fecha || '')} ${escapeHtml(ev.hora || '')}</td>
               <td>${escapeHtml(ev.ubicacion || '')}</td>
-              <td>${(getCurrentUser() && String(ev.idUsuario)===String(getCurrentUser().id)) ? `<button class="btn small" data-edit="${escapeHtml(ev.idEvento||ev.id||'')}">Editar</button>` : ''}</td>
+              <td></td>
             </tr>
           `).join('');
       }

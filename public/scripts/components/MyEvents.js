@@ -6,7 +6,7 @@ import { navigateTo } from '../utils/router.js';
 
 let _isSubmittingEdit = false;
 
-function escapeHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 function toDateInputValue(raw) {
   if (!raw) return '';
@@ -28,29 +28,32 @@ export function renderMyEvents() {
 
   const rows = myEvents.length
     ? myEvents.map(ev => {
-        const id = ev.idEvento || ev.id;
-        const nombre = ev.nombre || '';
-        const tipo = ev.tipo || '';
-        const fecha = ev.fecha || '';
-        const hora = ev.hora || '';
-        const estado = ev.estado || '';
-        const editable = estado === 'registrado';
-        return `
+      const id = ev.idEvento || ev.id;
+      const nombre = ev.nombre || '';
+      const tipo = ev.tipo || '';
+      const fecha = ev.fecha || '';
+      const hora = ev.hora || '';
+      const estado = ev.estado || '';
+      const ubicacion = ev.ubicacion || '';
+      const editable = estado === 'registrado';
+      return `
           <tr data-id="${escapeHtml(id)}">
             <td>${escapeHtml(nombre)}</td>
             <td>${escapeHtml(tipo)}</td>
             <td>${escapeHtml(fecha)} ${escapeHtml(hora)}</td>
+            <td>${escapeHtml(ubicacion)}</td>
             <td>${escapeHtml(estado)}</td>
             <td>
               ${editable
-                ? `<button class="btn small" data-edit="${escapeHtml(id)}">Editar</button>
-                   <button class="btn small danger" data-delete="${escapeHtml(id)}">Eliminar</button>`
-                : `<span class="muted">No editable</span>`}
+          ? `<button class="btn small" data-edit="${escapeHtml(id)}">Editar</button>
+             <button class="btn small danger" data-delete="${escapeHtml(id)}">Eliminar</button>
+             <button class="btn small secondary" data-send="${escapeHtml(id)}">Enviar</button>`
+          : `<span class="muted">No editable</span>`}
             </td>
           </tr>
         `;
-      }).join('')
-    : '<tr><td colspan="5">No has creado eventos aún</td></tr>';
+    }).join('')
+    : '<tr><td colspan="6">No has creado eventos aún</td></tr>';
 
   return `
     <div class="card">
@@ -62,6 +65,7 @@ export function renderMyEvents() {
               <th>Nombre</th>
               <th>Tipo</th>
               <th>Fecha</th>
+              <th>Ubicación</th>
               <th>Estado</th>
               <th>Acciones</th>
             </tr>
@@ -101,6 +105,12 @@ export function renderMyEvents() {
             </div>
 
             <div>
+              <label class="label">Capacidad</label>
+              <input class="input" name="capacidad" type="number" min="1" required />
+              <div id="instCapacitySummary" style="font-size:0.9em; margin-top:6px; color:#555;"></div>
+            </div>
+
+            <div>
               <label class="label">Instalaciones</label>
               <div id="editInstList" style="border:1px solid #ddd; padding:8px; max-height:160px; overflow:auto;"></div>
               <div style="margin-top:8px;">
@@ -116,6 +126,26 @@ export function renderMyEvents() {
               <label class="label">Organizaciones participantes</label>
               <input id="editOrgFilter" class="input" placeholder="Filtrar por nombre o sector" style="margin-bottom:8px;">
               <div id="editOrgList" style="max-height:320px; overflow:auto; border:1px solid #ddd; padding:6px;"></div>
+            </div>
+
+            <div id="editAvalBlock" style="margin-top:12px; border-top:1px dashed #eee; padding-top:12px;">
+              <label class="label">Aval del evento</label>
+              <div id="avalExistingWrap" style="margin-bottom:8px;"></div>
+              <div id="avalDeleteWrap" style="margin-bottom:8px;"></div>
+
+              <div style="margin-top:8px;">
+                <label class="label">Tipo de aval</label>
+                <select id="tipoAvalSelect" name="tipoAval" class="select">
+                  <option value="">-- seleccionar --</option>
+                  <option value="director_programa">Director de Programa</option>
+                  <option value="director_docencia">Director de Docencia</option>
+                </select>
+              </div>
+
+              <div id="avalFileWrap" style="margin-top:8px;">
+                <label style="font-size:0.9em;">Subir aval (PDF)</label>
+                <input type="file" accept="application/pdf" id="avalFileInput" name="avalPdf" />
+              </div>
             </div>
 
             <div class="flex-row" style="gap:8px;">
@@ -141,16 +171,43 @@ export function bindMyEventsListeners() {
     const deleteBtn = e.target.closest('[data-delete]');
     if (deleteBtn) {
       const id = deleteBtn.getAttribute('data-delete');
-      if (!confirm('¿Eliminar este evento? Esta acción no se puede deshacer.')) return;
+      if (!confirm('¿Eliminar este evento?')) return;
       try {
         const res = await fetch(`/api/events/${id}`, { method: 'DELETE' });
         const body = await res.json();
         if (!res.ok) { toast(body.error || 'Error eliminando evento', 'error'); return; }
-        toast('Evento eliminado correctamente', 'success');
+        toast('Evento eliminado', 'success');
         const updatedEvents = getState().events.filter(ev => String(ev.idEvento || ev.id) !== String(id));
         setState({ ...getState(), events: updatedEvents });
       } catch (err) {
-        console.error('Error eliminando evento:', err); toast('Error eliminando evento', 'error');
+        console.error(err); toast('Error eliminando evento', 'error');
+      }
+      return;
+    }
+
+    const sendBtn = e.target.closest('[data-send]');
+    if (sendBtn) {
+      const id = sendBtn.getAttribute('data-send');
+      if (!confirm('Enviar evento para revisión? Esto cambiará el estado a enRevision')) return;
+      try {
+        const res = await fetch(`/api/events/${encodeURIComponent(id)}/send`, { method: 'POST' });
+        if (res.status === 401 || res.status === 403) { toast('No autorizado', 'error'); return; }
+        if (!res.ok) {
+          const b = await res.json().catch(()=>({}));
+          toast(b.error || b.message || 'No se pudo enviar el evento', 'error');
+          return;
+        }
+        const updated = await res.json().catch(()=>null);
+        const st = getState();
+        const evs = Array.isArray(st.events) ? st.events.slice() : [];
+        const idx = evs.findIndex(ev => String(ev.idEvento || ev.id) === String(id));
+        if (updated && idx >= 0) evs[idx] = updated;
+        else if (idx >= 0) evs[idx].estado = 'enRevision';
+        setState({ ...st, events: evs });
+        toast('Evento enviado para revisión', 'success');
+      } catch (err) {
+        console.error('Error enviando evento:', err);
+        toast('Error enviando evento', 'error');
       }
       return;
     }
@@ -165,6 +222,7 @@ export function bindMyEventsListeners() {
     if (e.target?.id === 'editInstSelectAll') {
       const chk = !!e.target.checked;
       document.querySelectorAll('#editInstList .inst-checkbox').forEach(cb => cb.checked = chk);
+      updateInstCapacitySummary();
       return;
     }
 
@@ -174,15 +232,6 @@ export function bindMyEventsListeners() {
       return;
     }
 
-    // toggle cert delete checkbox shows/hides file input
-    if (e.target && e.target.classList && e.target.classList.contains('cert-delete')) {
-      const orgId = e.target.getAttribute('data-org');
-      const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${escapeHtml(orgId)}"]`);
-      if (fileWrap) fileWrap.style.display = e.target.checked ? '' : 'none';
-      return;
-    }
-
-    // toggle org-select shows/hides cert block area
     if (e.target && e.target.classList && e.target.classList.contains('org-select')) {
       const orgId = e.target.value;
       const certBlock = document.querySelector(`#editOrgList [data-cert-block="${escapeHtml(orgId)}"]`);
@@ -190,7 +239,6 @@ export function bindMyEventsListeners() {
       return;
     }
 
-    // org-rep checkbox handler: hide/show encargado and preserve value
     if (e.target && e.target.classList && e.target.classList.contains('org-rep')) {
       const orgId = e.target.getAttribute('data-org');
       const enc = document.querySelector(`#editOrgList .org-encargado[data-org="${escapeHtml(orgId)}"]`);
@@ -198,6 +246,22 @@ export function bindMyEventsListeners() {
       if (e.target.checked) { enc.setAttribute('data-prev', enc.value || ''); enc.value = ''; enc.style.display = 'none'; }
       else { enc.value = enc.getAttribute('data-prev') || ''; enc.style.display = ''; }
       return;
+    }
+
+    if (e.target && e.target.classList && e.target.classList.contains('aval-delete')) {
+      const chk = e.target.checked;
+      const fileWrap = document.getElementById('avalFileWrap');
+      const deleteHiddenInput = document.querySelector('input[name="delete_aval"]');
+      if (fileWrap) fileWrap.style.display = chk ? '' : 'none';
+      if (deleteHiddenInput) deleteHiddenInput.value = chk ? '1' : '0';
+      return;
+    }
+  });
+
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('inst-checkbox')) {
+      setSelectAllCheckbox();
+      updateInstCapacitySummary();
     }
   });
 
@@ -218,6 +282,38 @@ export function bindMyEventsListeners() {
   });
 }
 
+/* ---------- helper UI functions ---------- */
+function buildInstListHtml(installations, selectedIds) {
+  return (installations || []).map(i => {
+    const iid = i.idInstalacion || i.id;
+    const label = escapeHtml(i.nombre || i.ubicacion || `Instalación ${iid}`);
+    const checked = (selectedIds || []).some(x => String(x) === String(iid));
+    const cap = i.capacidad != null ? i.capacidad : 0;
+    return `<div style="padding:4px 0;"><label><input type="checkbox" class="inst-checkbox" name="instalaciones" value="${escapeHtml(iid)}" ${checked ? 'checked' : ''}> ${label} — cap: ${escapeHtml(cap)}</label></div>`;
+  }).join('');
+}
+
+function getSelectedInstalacionesFromModal() {
+  const checkboxes = Array.from(document.querySelectorAll('#editInstList .inst-checkbox'));
+  return checkboxes.filter(cb => cb.checked).map(cb => cb.value);
+}
+
+function setSelectAllCheckbox() {
+  const all = Array.from(document.querySelectorAll('#editInstList .inst-checkbox'));
+  const chk = document.getElementById('editInstSelectAll');
+  if (!all.length) { if (chk) chk.checked = false; return; }
+  const checked = all.filter(cb => cb.checked).length === all.length;
+  if (chk) chk.checked = checked;
+}
+
+function updateInstCapacitySummary() {
+  const selectedIds = getSelectedInstalacionesFromModal().map(String);
+  const list = Array.isArray(getState().installations) ? getState().installations : [];
+  const total = list.filter(i => selectedIds.includes(String(i.idInstalacion || i.id))).reduce((s, r) => s + Number(r.capacidad || 0), 0);
+  const el = document.getElementById('instCapacitySummary');
+  if (el) el.textContent = `Capacidad total disponible según instalaciones seleccionadas: ${total}`;
+}
+
 /* ---------- open modal and preload data ---------- */
 async function openEventEditModal(id) {
   try {
@@ -226,12 +322,19 @@ async function openEventEditModal(id) {
     const evento = await rEvt.json();
     if (!rEvt.ok || !evento) { toast('No se pudo cargar el evento', 'error'); return; }
 
-    const st = getState();
-    if (!Array.isArray(st.installations) || st.installations.length === 0) {
-      try { const rInst = await fetch('/api/installations'); const instData = await rInst.json(); setState({ ...getState(), installations: Array.isArray(instData) ? instData : [] }); } catch {}
+    // ensure installations in state (always fetch fresh here to guarantee up-to-date capacities)
+    try {
+      const rInst = await fetch('/api/installations');
+      const instList = await rInst.json();
+      setState({ ...getState(), installations: instList || [] });
+    } catch (e) {
+      // keep whatever is in state if fetch fails
     }
+
+    // ensure organizations in state (keep existing behavior)
+    const st = getState();
     if (!Array.isArray(st.organizations) || st.organizations.length === 0) {
-      try { const rOrg = await fetch('/api/organizations'); const orgData = await rOrg.json(); setState({ ...getState(), organizations: Array.isArray(orgData) ? orgData : [] }); } catch {}
+      try { const rOrg = await fetch('/api/organizations'); setState({ ...getState(), organizations: await rOrg.json() || [] }); } catch { /* noop */ }
     }
 
     const rAssoc = await fetch(`/api/organization-event/event/${id}`);
@@ -251,18 +354,20 @@ async function openEventEditModal(id) {
     setIf('[name="fecha"]', toDateInputValue(evento.fecha || evento.fechaEvento || evento.fecha_inicio || ''));
     setIf('[name="hora"]', evento.hora || '');
     setIf('[name="horaFin"]', evento.horaFin || '');
-    setIf('[name="capacidad"]', evento.capacidad || '');
+    setIf('[name="capacidad"]', evento.capacidad != null ? String(evento.capacidad) : '');
 
-    // instalaciones
+    // instalaciones: prefer evento.instalacionesIds (array) else evento.instalaciones (objects or ids)
+    const instalacionIds = Array.isArray(evento.instalacionesIds) && evento.instalacionesIds.length
+      ? evento.instalacionesIds.map(String)
+      : (Array.isArray(evento.instalaciones) ? evento.instalaciones.map(i => String(i.idInstalacion || i)) : []);
+
     const installations = Array.isArray(getState().installations) ? getState().installations : [];
-    instList.innerHTML = installations.map(i => {
-      const iid = i.idInstalacion || i.id;
-      const label = escapeHtml(i.nombre || i.ubicacion || `Instalación ${iid}`);
-      const checked = Array.isArray(evento.instalaciones) && evento.instalaciones.some(x => String(x) === String(iid));
-      return `<div style="padding:4px 0;"><label><input type="checkbox" class="inst-checkbox" name="instalaciones" value="${escapeHtml(iid)}" ${checked ? 'checked' : ''}> ${label}</label></div>`;
-    }).join('');
+    instList.innerHTML = buildInstListHtml(installations, instalacionIds);
 
-    // map associations by org id (assoc rows include certificadoParticipacion, participante, esRepresentanteLegal, org data)
+    setSelectAllCheckbox();
+    updateInstCapacitySummary();
+
+    // map associations
     const assocMap = {};
     (assocList || []).forEach(a => {
       const key = String(a.idOrganizacion || (a.org && a.org.idOrganizacion) || a.org_idOrganizacion || '');
@@ -284,30 +389,22 @@ async function openEventEditModal(id) {
       const lookup = assocMap[String(oid)];
       const checked = !!lookup;
 
-      // normalize esRepresentanteLegal
       let rep = false;
       if (lookup) {
         const val = lookup.esRepresentanteLegal ?? lookup.representanteLegal ?? (lookup.org && lookup.org.representanteLegal);
         rep = (val === true) || String(val).toLowerCase() === 'si' || String(val).toLowerCase() === 'true';
       }
 
-      // participante value if exists on assoc
       const participanteVal = lookup ? (lookup.participante || '') : '';
 
-      // certificado path normalization
       let certificadoPath = lookup ? (lookup.certificadoParticipacion || null) : null;
       if (certificadoPath && !certificadoPath.startsWith('/')) {
         if (certificadoPath.startsWith('uploads/')) certificadoPath = '/' + certificadoPath;
         else certificadoPath = '/uploads/' + certificadoPath;
       }
 
-      // if there's an existing certificado, show it and show a checkbox to "Eliminar anterior" before enabling file input
-      const certExistsHtml = certificadoPath ? `<div style="margin-top:6px;"><a href="${escapeHtml(certificadoPath)}" target="_blank" rel="noopener noreferrer">Ver certificado actual</a></div>` : '';
-      const deleteCheckboxHtml = certificadoPath ? `<div style="margin-top:6px;"><label><input type="checkbox" class="cert-delete" data-org="${escapeHtml(oid)}"> Borrar certificado anterior para poder subir uno nuevo</label></div>` : '';
-
-      // file input wraps start hidden unless delete checkbox is checked (for existing cert) or cert did not exist
-      const fileInputVisible = certificadoPath ? 'style="display:none;"' : '';
-      const fileInputHtml = `<div ${fileInputVisible} data-file-wrap="${escapeHtml(oid)}"><label style="font-size:0.9em;">Subir certificado (PDF)</label><input type="file" accept="application/pdf" class="org-cert" data-org="${escapeHtml(oid)}" /></div>`;
+      const certLinkHtml = certificadoPath ? `<div style="margin-top:6px;"><a href="${escapeHtml(certificadoPath)}" target="_blank" rel="noopener noreferrer">Ver certificado actual</a></div>` : '';
+      const fileInputHtml = `<div style="margin-top:6px;"><label style="font-size:0.9em;">Reemplazar certificado (PDF)</label><input type="file" accept="application/pdf" class="org-cert" data-org="${escapeHtml(oid)}" /></div>`;
 
       return `
         <div class="org-item" data-org-id="${escapeHtml(oid)}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
@@ -327,9 +424,11 @@ async function openEventEditModal(id) {
               </div>
 
               <div style="margin-top:6px; display:${checked ? '' : 'none'};" data-cert-block="${escapeHtml(oid)}">
-                ${certExistsHtml}
-                ${deleteCheckboxHtml}
+                ${certLinkHtml}
                 ${fileInputHtml}
+                <div style="margin-top:6px;">
+                  <label><input type="checkbox" class="cert-delete" data-org="${escapeHtml(oid)}" /> Borrar certificado anterior</label>
+                </div>
               </div>
             </div>
           </div>
@@ -337,7 +436,53 @@ async function openEventEditModal(id) {
       `;
     }).join('') : '<div class="muted">No hay organizaciones registradas</div>';
 
-    // show modal
+    // AVAL block population
+    const avalWrap = document.getElementById('avalExistingWrap');
+    const avalDeleteWrap = document.getElementById('avalDeleteWrap');
+    const avalFileWrap = document.getElementById('avalFileWrap');
+    const avalFileInput = document.getElementById('avalFileInput');
+
+    const prevHidden = form.querySelector('input[name="delete_aval"]');
+    if (prevHidden) prevHidden.remove();
+
+    let avalPath = null;
+    if (evento.avalPdf) avalPath = evento.avalPdf;
+    else {
+      try {
+        const evAv = await fetch(`/api/aval/event/${id}`);
+        if (evAv.ok) {
+          const list = await evAv.json();
+          if (Array.isArray(list) && list.length > 0) avalPath = list[0].avalPdf;
+        }
+      } catch (e) { /* noop */ }
+    }
+
+    if (avalPath && !avalPath.startsWith('/')) {
+      if (avalPath.startsWith('uploads/')) avalPath = '/' + avalPath;
+      else avalPath = '/uploads/' + avalPath;
+    }
+
+    if (avalWrap) {
+      avalWrap.innerHTML = avalPath ? `<div>Aval actual: <a href="${escapeHtml(avalPath)}" target="_blank" rel="noopener noreferrer">Ver aval</a></div>` : `<div class="muted">No hay aval registrado</div>`;
+    }
+
+    if (avalDeleteWrap && avalFileWrap) {
+      if (avalPath) {
+        avalDeleteWrap.innerHTML = `<label><input type="checkbox" class="aval-delete" /> Borrar aval anterior para poder subir uno nuevo</label>`;
+        avalFileWrap.style.display = 'none';
+      } else {
+        avalDeleteWrap.innerHTML = '';
+        avalFileWrap.style.display = '';
+      }
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'delete_aval';
+      hidden.value = '0';
+      form.appendChild(hidden);
+    }
+
+    if (avalFileInput) avalFileInput.value = '';
+
     modal.style.display = 'block';
     setTimeout(() => form.querySelector('[name="nombre"]')?.focus(), 100);
   } catch (err) {
@@ -348,9 +493,9 @@ async function openEventEditModal(id) {
 
 /* ---------- submit edited event ---------- */
 async function submitEditedEvent(form) {
+  const submitBtn = document.getElementById('evtEditSubmitBtn');
   if (_isSubmittingEdit) { toast('Enviando... espera', 'info'); return; }
   _isSubmittingEdit = true;
-  const submitBtn = document.getElementById('evtEditSubmitBtn');
   if (submitBtn) submitBtn.disabled = true;
 
   try {
@@ -371,6 +516,14 @@ async function submitEditedEvent(form) {
     const instalacionesIds = instalacionCheckboxes.filter(cb => cb.checked).map(cb => cb.value).filter(Boolean);
     if (!instalacionesIds.length) { toast('Seleccione al menos una instalación', 'error'); throw new Error('validation'); }
 
+    // client-side capacity validation using current state installations (freshly fetched when modal opened)
+    const capacidadRaw = fd.get('capacidad');
+    const capacidadNum = capacidadRaw ? Number(capacidadRaw) : null;
+    if (!Number.isFinite(capacidadNum) || capacidadNum <= 0) { toast('Capacidad debe ser número > 0', 'error'); throw new Error('validation'); }
+    const selectedSet = new Set((instalacionesIds || []).map(String));
+    const totalInstCap = (Array.isArray(getState().installations) ? getState().installations : []).filter(i => selectedSet.has(String(i.idInstalacion || i.id))).reduce((s,i) => s + Number(i.capacidad || 0), 0);
+    if (capacidadNum > totalInstCap) { toast(`Capacidad (${capacidadNum}) excede la suma de capacidades (${totalInstCap})`, 'error'); throw new Error('validation'); }
+
     const hasOrg = !!document.getElementById('editHasOrg')?.checked;
     const organizacionesPayload = [];
     const organizationsState = Array.isArray(getState().organizations) ? getState().organizations : [];
@@ -387,8 +540,6 @@ async function submitEditedEvent(form) {
         const encargadoValRaw = encEl ? encEl.value : '';
         const encargadoVal = encargadoValRaw ? String(encargadoValRaw).trim() : '';
 
-        // If checked as representante legal, ensure we send a non-empty participante:
-        // Priority: user-provided encargadoVal > organizationsState.representanteLegal > validation error
         let participanteValue = null;
         if (isRep) {
           if (encargadoVal) participanteValue = encargadoVal;
@@ -403,20 +554,14 @@ async function submitEditedEvent(form) {
           if (!participanteValue) { toast('Ingrese encargado para organización sin representante legal', 'error'); throw new Error('validation'); }
         }
 
-        // Determine if user asked to delete existing cert for this org (then file input must be used to upload new one)
-        const deleteCheckbox = document.querySelector(`#editOrgList .cert-delete[data-org="${orgId}"]`);
-        const wantsDelete = !!(deleteCheckbox && deleteCheckbox.checked);
-
         organizacionesPayload.push({
           idOrganizacion: orgId,
           esRepresentanteLegal: isRep ? 'si' : 'no',
           participante: participanteValue,
-          deleteCertBeforeUpload: wantsDelete // flag auxiliar para backend if needed
+          deleteCertBeforeUpload: !!document.querySelector(`#editOrgList .cert-delete[data-org="${orgId}"]`)?.checked
         });
 
-        // Validate file input if visible (if user wants to upload new cert)
-        const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${orgId}"]`);
-        const certInput = fileWrap ? fileWrap.querySelector('.org-cert') : document.querySelector(`#editOrgList .org-cert[data-org="${orgId}"]`);
+        const certInput = document.querySelector(`#editOrgList .org-cert[data-org="${orgId}"]`);
         const cert = certInput?.files?.[0];
         if (cert && cert.type !== 'application/pdf') { toast('Certificado debe ser PDF', 'error'); throw new Error('validation'); }
       }
@@ -425,34 +570,43 @@ async function submitEditedEvent(form) {
     const sendForm = new FormData();
     const payloadEvento = {
       idUsuario: fd.get('idUsuario') || getCurrentUser()?.id,
-      instalaciones: instalacionesIds,
-      estado: 'registrado',
+      instalaciones: instalacionesIds.map(id => Number(id)),
       nombre,
       tipo,
       fecha,
       hora,
       horaFin,
       descripcion: fd.get('descripcion') || '',
-      capacidad: fd.get('capacidad') ? Number(fd.get('capacidad')) : null
+      capacidad: capacidadNum
     };
     sendForm.append('evento', JSON.stringify(payloadEvento));
     sendForm.append('organizaciones', JSON.stringify(organizacionesPayload));
-    sendForm.append('instalaciones', JSON.stringify(instalacionesIds));
+    sendForm.append('instalaciones', JSON.stringify(payloadEvento.instalaciones));
 
-    if (hasOrg) {
+    const deleteAvalVal = fd.get('delete_aval') || '0';
+    if (deleteAvalVal === '1') sendForm.append('delete_aval', '1');
+
+    const tipoAvalSelect = form.querySelector('#tipoAvalSelect');
+    const tipoAvalValue = tipoAvalSelect ? (tipoAvalSelect.value || '') : '';
+    if (tipoAvalValue) sendForm.append('tipoAval', tipoAvalValue);
+
+    const avalFileInputNode = form.querySelector('#avalFileInput');
+    const avalFile = avalFileInputNode?.files?.[0];
+    if (avalFile) {
+      if (avalFile.type !== 'application/pdf') { toast('Aval debe ser PDF', 'error'); throw new Error('validation'); }
+      if (!tipoAvalValue) { toast('Seleccione el tipo de aval antes de subir el archivo', 'error'); throw new Error('validation'); }
+      sendForm.append('avalPdf', avalFile);
+    }
+
+    if (Array.isArray(organizacionesPayload)) {
       for (const p of organizacionesPayload) {
         const oid = p.idOrganizacion;
-        const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${oid}"]`);
-        const certInput = fileWrap ? fileWrap.querySelector('.org-cert') : document.querySelector(`#editOrgList .org-cert[data-org="${oid}"]`);
+        const certInput = document.querySelector(`#editOrgList .org-cert[data-org="${oid}"]`);
         const cert = certInput?.files?.[0];
-        // only append a file when user provided one (and optionally indicated deletion first)
         if (cert) sendForm.append(`certificado_org_${oid}`, cert);
-        // forward delete flag so backend can remove previous file if requested
         if (p.deleteCertBeforeUpload) sendForm.append(`delete_cert_org_${oid}`, '1');
       }
     }
-
-    console.debug('Enviar organizaciones payload:', organizacionesPayload);
 
     const idEvento = form.querySelector('[name="idEvento"]')?.value;
     const url = `/api/events/${encodeURIComponent(idEvento)}`;
@@ -477,3 +631,5 @@ async function submitEditedEvent(form) {
     if (submitBtn) submitBtn.disabled = false;
   }
 }
+
+export { openEventEditModal };
