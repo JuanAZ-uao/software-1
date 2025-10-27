@@ -83,56 +83,70 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
   try {
     await conn.beginTransaction();
 
+    // Insertar evento base
     const created = await repo.insert(evento, conn);
-    const id = created.idEvento || created.id;
+    const idEvento = created.idEvento || created.id;
 
-    if (files && files.avalFile) {
-      await avalService.createAval({ idUsuario: uploaderId, idEvento: id, file: files.avalFile, tipoAval }, conn);
+    // Aval
+    if (files?.avalFile) {
+      await avalService.createAval({ idUsuario: uploaderId, idEvento, file: files.avalFile, tipoAval }, conn);
     } else if (tipoAval) {
-      await avalService.updateTipo({ idEvento: id, tipoAval }, conn);
+      await avalService.updateTipo({ idEvento, tipoAval }, conn);
     }
 
+    // Instalaciones
     if (Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
-      if (instEventSvc && typeof instEventSvc.linkInstallationsToEvent === 'function') {
-        await instEventSvc.linkInstallationsToEvent(id, evento.instalaciones, conn);
-      } else if (typeof repo.linkInstallations === 'function') {
-        await repo.linkInstallations(id, evento.instalaciones, conn);
+      if (instEventSvc?.linkInstallationsToEvent) {
+        await instEventSvc.linkInstallationsToEvent(idEvento, evento.instalaciones, conn);
+      } else if (repo.linkInstallations) {
+        await repo.linkInstallations(idEvento, evento.instalaciones, conn);
       }
     }
 
-    if (Array.isArray(organizaciones) && organizaciones.length > 0) {
-      for (const org of organizaciones) {
-        const orgId = org.idOrganizacion;
-        const esRepRaw = org.esRepresentanteLegal ?? org.representanteLegal;
-        const esRepresentanteLegal = (esRepRaw === true) || String(esRepRaw).toLowerCase() === 'si' || String(esRepRaw).toLowerCase() === 'true';
-        let participanteFinal = org.participante ?? null;
-        if (esRepresentanteLegal) {
-          const orgRepo = await import('../repositories/organizations.repository.js').then(m => m).catch(()=>null);
-          const orgRecord = orgRepo && typeof orgRepo.findById === 'function' ? await orgRepo.findById(orgId, conn) : null;
-          participanteFinal = orgRecord ? (orgRecord.representanteLegal || orgRecord.representante || orgRecord.representante_legal || participanteFinal) : participanteFinal;
-        }
-        const certPath = org.certificadoParticipacion ?? null;
-        await orgEventRepo.upsert({
-          idOrganizacion: orgId,
-          idEvento: id,
-          participante: participanteFinal,
-          esRepresentanteLegal: esRepresentanteLegal ? 'si' : 'no',
-          certificadoParticipacion: certPath
-        }, conn);
+    // Organizaciones
+    for (const org of organizaciones) {
+      const orgId = org.idOrganizacion;
+      if (!orgId) throw Object.assign(new Error('idOrganizacion requerido'), { status: 400 });
+
+      const esRepRaw = org.esRepresentanteLegal ?? org.representanteLegal;
+      const esRepresentanteLegal = (esRepRaw === true) || String(esRepRaw).toLowerCase() === 'si' || String(esRepRaw).toLowerCase() === 'true';
+
+      let participanteFinal = org.participante ?? null;
+      if (esRepresentanteLegal) {
+        const orgRepo = await import('../repositories/organizations.repository.js').then(m => m).catch(() => null);
+        const orgRecord = orgRepo?.findById ? await orgRepo.findById(orgId, conn) : null;
+        participanteFinal = orgRecord?.representanteLegal || orgRecord?.representante || orgRecord?.representante_legal || participanteFinal;
+      }
+
+      // Certificado por organización
+      const certFile = files?.orgFiles?.[orgId] || null;
+      const certPath = certFile ? `/uploads/${certFile.filename}` : null;
+
+      await orgEventRepo.upsert({
+        idOrganizacion: orgId,
+        idEvento,
+        participante: participanteFinal,
+        esRepresentanteLegal: esRepresentanteLegal ? 'si' : 'no',
+        certificadoParticipacion: certPath
+      }, conn);
+
+      if (certFile && orgEventRepo.saveCertificateForAssoc) {
+        await orgEventRepo.saveCertificateForAssoc({ idEvento, idOrganizacion: orgId, certFile }, conn);
       }
     }
 
-    if (files && files.certGeneral) {
+    // Certificado general del evento
+    if (files?.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
-      if (typeof repo.attachGeneralCertificate === 'function') {
-        await repo.attachGeneralCertificate(id, { certificadoParticipacion: certPath }, conn);
+      if (repo.attachGeneralCertificate) {
+        await repo.attachGeneralCertificate(idEvento, { certificadoParticipacion: certPath }, conn);
       } else {
-        await conn.query('UPDATE evento SET certificadoParticipacion = ? WHERE idEvento = ?', [certPath, id]);
+        await conn.query('UPDATE evento SET certificadoParticipacion = ? WHERE idEvento = ?', [certPath, idEvento]);
       }
     }
 
     await conn.commit();
-    return await repo.findById(id, conn);
+    return await repo.findById(idEvento, conn);
   } catch (err) {
     await conn.rollback();
     throw err;
@@ -141,9 +155,11 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
   }
 }
 
+
 /**
  * updateEventWithOrgs
  */
+
 export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, organizaciones = [], files = {} }) {
   validateEvento(evento);
 
@@ -155,19 +171,19 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
   try {
     await conn.beginTransaction();
 
+    // Validar capacidad
     if (evento.capacidad !== undefined || Array.isArray(evento.instalaciones)) {
       let instalacionesToCheck = null;
+
       if (Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
         instalacionesToCheck = evento.instalaciones;
+      } else if (typeof repo.findInstallationIdsByEvent === 'function') {
+        instalacionesToCheck = await repo.findInstallationIdsByEvent(id, conn);
+      } else if (instEventSvc?.findInstallationsByEvent) {
+        const rows = await instEventSvc.findInstallationsByEvent(id, conn);
+        instalacionesToCheck = (rows || []).map(r => r.idInstalacion);
       } else {
-        if (typeof repo.findInstallationIdsByEvent === 'function') {
-          instalacionesToCheck = await repo.findInstallationIdsByEvent(id, conn);
-        } else if (instEventSvc && typeof instEventSvc.findInstallationsByEvent === 'function') {
-          const rows = await instEventSvc.findInstallationsByEvent(id, conn);
-          instalacionesToCheck = (rows || []).map(r => r.idInstalacion);
-        } else {
-          instalacionesToCheck = [];
-        }
+        instalacionesToCheck = [];
       }
 
       if (!Array.isArray(instalacionesToCheck) || instalacionesToCheck.length === 0) {
@@ -178,6 +194,7 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       if (instalacionesRows.length !== instalacionesToCheck.length) {
         throw Object.assign(new Error('Una o más instalaciones seleccionadas no existen'), { status: 400 });
       }
+
       const totalInstCap = instalacionesRows.reduce((s, r) => s + Number(r.capacidad || 0), 0);
 
       if (evento.capacidad !== undefined && evento.capacidad !== null) {
@@ -194,81 +211,96 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
 
     await repo.updateById(id, evento, conn);
 
-    if (files && files.avalFile) {
-      if (!tipoAval || !['director_programa','director_docencia'].includes(tipoAval)) {
+    // Aval
+    if (files?.avalFile) {
+      if (!tipoAval || !['director_programa', 'director_docencia'].includes(tipoAval)) {
         throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
       }
       await avalService.createAval({ idUsuario: uploaderId, idEvento: id, file: files.avalFile, tipoAval }, conn);
     } else if (tipoAval) {
-      if (!['director_programa','director_docencia'].includes(tipoAval)) {
+      if (!['director_programa', 'director_docencia'].includes(tipoAval)) {
         throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
       }
       await avalService.updateTipo({ idEvento: id, tipoAval }, conn);
-    } else if (files && files.deleteAval) {
-      if (typeof avalService.deleteAvalFile === 'function') {
+    } else if (files?.deleteAval) {
+      if (avalService?.deleteAvalFile) {
         await avalService.deleteAvalFile({ idEvento: id, conn });
       } else {
         await conn.query('UPDATE aval SET avalPdf = NULL WHERE idEvento = ? AND principal = 1', [id]);
       }
     }
 
+    // Instalaciones
     if (Array.isArray(evento.instalaciones)) {
-      if (instEventSvc && typeof instEventSvc.unlinkByEvent === 'function' && typeof instEventSvc.linkInstallationsToEvent === 'function') {
+      if (instEventSvc?.unlinkByEvent && instEventSvc?.linkInstallationsToEvent) {
         await instEventSvc.unlinkByEvent(id, conn);
         if (evento.instalaciones.length > 0) {
           await instEventSvc.linkInstallationsToEvent(id, evento.instalaciones, conn);
         }
-      } else if (typeof repo.replaceInstallationsForEvent === 'function') {
+      } else if (repo.replaceInstallationsForEvent) {
         await repo.replaceInstallationsForEvent(id, evento.instalaciones, conn);
       }
     }
 
-    if (Array.isArray(organizaciones)) {
-      for (const org of organizaciones) {
-        const orgId = org.idOrganizacion;
-        if (!orgId) throw Object.assign(new Error('idOrganizacion requerido en organizaciones'), { status: 400 });
+    // Organizaciones
+    for (const org of organizaciones) {
+      const orgId = org.idOrganizacion;
+      if (!orgId) throw Object.assign(new Error('idOrganizacion requerido en organizaciones'), { status: 400 });
 
-        const esRepRaw = org.esRepresentanteLegal ?? org.representanteLegal;
-        const esRepresentanteLegal = (esRepRaw === true) || String(esRepRaw).toLowerCase() === 'si' || String(esRepRaw).toLowerCase() === 'true';
+      const esRepRaw = org.esRepresentanteLegal ?? org.representanteLegal;
+      const esRepresentanteLegal = (esRepRaw === true) || String(esRepRaw).toLowerCase() === 'si' || String(esRepRaw).toLowerCase() === 'true';
 
-        let participanteFinal = org.participante ?? null;
-        if (esRepresentanteLegal) {
-          const orgRepo = await import('../repositories/organizations.repository.js').then(m => m).catch(()=>null);
-          const orgRecord = orgRepo && typeof orgRepo.findById === 'function' ? await orgRepo.findById(orgId, conn) : null;
-          if (!orgRecord) throw Object.assign(new Error(`Organización ${orgId} no encontrada`), { status: 400 });
-          const repName = orgRecord.representanteLegal || orgRecord.representante || orgRecord.representante_legal || null;
-          if (!repName || !String(repName).trim()) throw Object.assign(new Error(`No se encontró representante legal para organización ${orgId}`), { status: 400 });
-          participanteFinal = String(repName).trim();
-        } else {
-          if (!participanteFinal || !String(participanteFinal).trim()) {
-            throw Object.assign(new Error(`Debe especificar el encargado (participante) para la organización ${orgId}`), { status: 400 });
-          }
-          participanteFinal = String(participanteFinal).trim();
+      let participanteFinal = org.participante ?? null;
+      if (esRepresentanteLegal) {
+        const orgRepo = await import('../repositories/organizations.repository.js').then(m => m).catch(() => null);
+        const orgRecord = orgRepo?.findById ? await orgRepo.findById(orgId, conn) : null;
+        if (!orgRecord) throw Object.assign(new Error(`Organización ${orgId} no encontrada`), { status: 400 });
+        const repName = orgRecord.representanteLegal || orgRecord.representante || orgRecord.representante_legal || null;
+        if (!repName || !String(repName).trim()) throw Object.assign(new Error(`No se encontró representante legal para organización ${orgId}`), { status: 400 });
+        participanteFinal = String(repName).trim();
+      } else {
+        if (!participanteFinal || !String(participanteFinal).trim()) {
+          throw Object.assign(new Error(`Debe especificar el encargado (participante) para la organización ${orgId}`), { status: 400 });
         }
+        participanteFinal = String(participanteFinal).trim();
+      }
 
-        const certFile = files && files.orgFiles ? files.orgFiles[orgId] : null;
-        const deleteCertFlag = (files && files.deleteCerts && files.deleteCerts[orgId]) || !!org.deleteCertBeforeUpload;
+      const certFile = files?.orgFiles?.[orgId] || null;
+      const deleteCertFlag = files?.deleteCerts?.[orgId] || !!org.deleteCertBeforeUpload;
 
-        await orgEventRepo.upsert({
-          idOrganizacion: orgId,
-          idEvento: id,
-          participante: participanteFinal,
-          esRepresentanteLegal: esRepresentanteLegal ? 'si' : 'no',
-          certificadoParticipacion: certFile ? `/uploads/${certFile.filename}` : (org.certificadoParticipacion === undefined ? null : org.certificadoParticipacion)
-        }, conn);
+      let certificadoFinal = null;
 
-        if (deleteCertFlag && typeof orgEventRepo.clearCertificate === 'function') {
-          await orgEventRepo.clearCertificate(orgId, id, conn);
-        }
-        if (certFile && typeof orgEventRepo.saveCertificateForAssoc === 'function') {
-          await orgEventRepo.saveCertificateForAssoc({ idEvento: id, idOrganizacion: orgId, certFile, deletePrevious: deleteCertFlag }, conn);
-        }
+      if (certFile) {
+        certificadoFinal = `/uploads/${certFile.filename}`;
+      } else if (!deleteCertFlag) {
+        const [row] = await conn.query(
+          'SELECT certificadoParticipacion FROM organizacion_evento WHERE idEvento = ? AND idOrganizacion = ? LIMIT 1',
+          [id, orgId]
+        );
+        certificadoFinal = row?.[0]?.certificadoParticipacion || null;
+      }
+
+      await orgEventRepo.upsert({
+        idOrganizacion: orgId,
+        idEvento: id,
+        participante: participanteFinal,
+        esRepresentanteLegal: esRepresentanteLegal ? 'si' : 'no',
+        certificadoParticipacion: deleteCertFlag ? null : certificadoFinal
+      }, conn);
+
+      if (deleteCertFlag && orgEventRepo.clearCertificate) {
+        await orgEventRepo.clearCertificate(orgId, id, conn);
+      }
+
+      if (certFile && orgEventRepo.saveCertificateForAssoc) {
+        await orgEventRepo.saveCertificateForAssoc({ idEvento: id, idOrganizacion: orgId, certFile, deletePrevious: deleteCertFlag }, conn);
       }
     }
 
-    if (files && files.certGeneral) {
+    // Certificado general
+    if (files?.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
-      if (typeof repo.attachGeneralCertificate === 'function') {
+      if (repo.attachGeneralCertificate) {
         await repo.attachGeneralCertificate(id, { certificadoParticipacion: certPath }, conn);
       } else {
         await conn.query('UPDATE evento SET certificadoParticipacion = ? WHERE idEvento = ?', [certPath, id]);
@@ -285,6 +317,7 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
     conn.release();
   }
 }
+
 
 // ============================================
 // NUEVAS FUNCIONES PARA DASHBOARD DE SECRETARIAS

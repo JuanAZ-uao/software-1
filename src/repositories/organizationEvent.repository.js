@@ -13,10 +13,7 @@ export async function upsert(record, conn) {
     ON DUPLICATE KEY UPDATE
       participante = VALUES(participante),
       esRepresentanteLegal = VALUES(esRepresentanteLegal),
-      certificadoParticipacion = CASE
-        WHEN VALUES(certificadoParticipacion) IS NULL THEN certificadoParticipacion
-        ELSE VALUES(certificadoParticipacion)
-      END
+      certificadoParticipacion = COALESCE(VALUES(certificadoParticipacion), certificadoParticipacion)
   `;
   const params = [
     record.idOrganizacion,
@@ -32,6 +29,7 @@ export async function upsert(record, conn) {
   );
   return rows[0] || null;
 }
+
 
 export async function clearCertificate(idOrganizacion, idEvento, conn) {
   const connection = conn || pool;
