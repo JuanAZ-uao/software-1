@@ -1,12 +1,12 @@
-// components/MyEvents.js
+// components/myEvents.js
 import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
-import { toast, todayISO } from '../utils/helpers.js';
+import { toast } from '../utils/helpers.js';
 import { navigateTo } from '../utils/router.js';
 
 let _isSubmittingEdit = false;
 
-function escapeHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escapeHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function toDateInputValue(raw) {
   if (!raw) return '';
@@ -21,102 +21,6 @@ function toDateInputValue(raw) {
   } catch { return ''; }
 }
 
-/* ---------- Trace wrappers to find who changes hash (installed on import) ---------- */
-(function installTraceHashWriters() {
-  try {
-    function wrap(obj, name) {
-      const orig = obj[name];
-      if (!orig || orig._isTraced) return;
-      obj[name] = function(...args) {
-        try {
-          console.groupCollapsed('[TRACE-HASH] ' + name + ' called');
-          console.log('args:', args);
-          console.trace();
-          console.groupEnd();
-        } catch (e) { console.warn('[TRACE-HASH] trace failed', e); }
-        return orig.apply(this, args);
-      };
-      obj[name]._isTraced = true;
-      obj[name]._orig = orig;
-    }
-
-    if (history && history.pushState) wrap(history, 'pushState');
-    if (history && history.replaceState) wrap(history, 'replaceState');
-
-    const loc = window.location;
-    if (loc && !loc._assign_traced) {
-      loc._assign_traced = true;
-      loc._assign_orig = loc.assign;
-      loc.assign = function(url) {
-        try {
-          console.groupCollapsed('[TRACE-HASH] location.assign');
-          console.log('url:', url);
-          console.trace();
-          console.groupEnd();
-        } catch (e) { /* noop */ }
-        return loc._assign_orig.call(loc, url);
-      };
-    }
-    if (loc && !loc._replace_traced) {
-      loc._replace_traced = true;
-      loc._replace_orig = loc.replace;
-      loc.replace = function(url) {
-        try {
-          console.groupCollapsed('[TRACE-HASH] location.replace');
-          console.log('url:', url);
-          console.trace();
-          console.groupEnd();
-        } catch (e) { /* noop */ }
-        return loc._replace_orig.call(loc, url);
-      };
-    }
-
-    // also watch direct hash writes
-    let lastHash = location.hash;
-    setInterval(() => {
-      if (location.hash !== lastHash) {
-        try {
-          console.groupCollapsed('[TRACE-HASH] direct hash change detected ->', location.hash);
-          console.trace();
-          console.groupEnd();
-        } catch (e) { /* noop */ }
-        lastHash = location.hash;
-      }
-    }, 100);
-
-    // log hashchange events with stack
-    window.addEventListener('hashchange', () => {
-      try {
-        console.log('[TRACE] hash changed ->', location.hash);
-        console.trace();
-      } catch (e) { /* noop */ }
-    });
-
-    // trace clicks on data-edit (capturing)
-    document.addEventListener('click', (e) => {
-      try {
-        const b = e.target.closest && e.target.closest('[data-edit]');
-        if (b) {
-          console.log('[TRACE] data-edit click target=', b);
-          console.trace();
-        }
-      } catch (err) { /* noop */ }
-    }, true);
-
-    // helper to inspect modal state from console
-    window.__traceCheckModal = function () {
-      const m = document.getElementById('eventEditModal');
-      console.log('[TRACE] modal present=', !!m, 'parent=', m?.parentElement?.id || m?.parentElement?.tagName || null);
-      return !!m;
-    };
-
-    console.log('[TRACE-HASH] installed wrappers and watchers');
-  } catch (e) {
-    console.warn('[TRACE-HASH] install failed', e);
-  }
-})();
-
-/* ---------- render ---------- */
 export function renderMyEvents() {
   const user = getCurrentUser();
   const allEvents = getState().events || [];
@@ -124,30 +28,29 @@ export function renderMyEvents() {
 
   const rows = myEvents.length
     ? myEvents.map(ev => {
-      const id = ev.idEvento || ev.id;
-      const nombre = ev.nombre || '';
-      const tipo = ev.tipo || '';
-      const fecha = ev.fecha || '';
-      const hora = ev.hora || '';
-      const estado = ev.estado || '';
-      const ubicacion = ev.ubicacion || '';
-      const editable = estado === 'registrado';
-      return `
+        const id = ev.idEvento || ev.id;
+        const nombre = ev.nombre || '';
+        const tipo = ev.tipo || '';
+        const fecha = ev.fecha || '';
+        const hora = ev.hora || '';
+        const estado = ev.estado || '';
+        const editable = estado === 'registrado';
+        return `
           <tr data-id="${escapeHtml(id)}">
             <td>${escapeHtml(nombre)}</td>
             <td>${escapeHtml(tipo)}</td>
             <td>${escapeHtml(fecha)} ${escapeHtml(hora)}</td>
-            <td>${escapeHtml(ubicacion)}</td>
+            <td>${escapeHtml(estado)}</td>
             <td>
               ${editable
-          ? `<button type="button" class="btn small" data-edit="${escapeHtml(id)}">Editar</button>
-             <button type="button" class="btn small danger" data-delete="${escapeHtml(id)}">Eliminar</button>`
-          : `<span class="muted">No editable</span>`}
+                ? `<button class="btn small" data-edit="${escapeHtml(id)}">Editar</button>
+                   <button class="btn small danger" data-delete="${escapeHtml(id)}">Eliminar</button>`
+                : `<span class="muted">No editable</span>`}
             </td>
           </tr>
         `;
-    }).join('')
-    : '<tr><td colspan="6">No has creado eventos aún</td></tr>';
+      }).join('')
+    : '<tr><td colspan="5">No has creado eventos aún</td></tr>';
 
   return `
     <div class="card">
@@ -159,7 +62,7 @@ export function renderMyEvents() {
               <th>Nombre</th>
               <th>Tipo</th>
               <th>Fecha</th>
-              <th>Ubicación</th>
+              <th>Estado</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -168,7 +71,7 @@ export function renderMyEvents() {
       </div>
     </div>
 
-    <div id="eventEditModal" class="modal" aria-hidden="true" style="display:none;">
+    <div id="eventEditModal" class="modal" style="display:none;">
       <div class="sheet" style="max-width:980px;">
         <div class="head">
           <strong>Editar Evento</strong>
@@ -215,26 +118,6 @@ export function renderMyEvents() {
               <div id="editOrgList" style="max-height:320px; overflow:auto; border:1px solid #ddd; padding:6px;"></div>
             </div>
 
-            <div id="editAvalBlock" style="margin-top:12px; border-top:1px dashed #eee; padding-top:12px;">
-              <label class="label">Aval del evento</label>
-              <div id="avalExistingWrap" style="margin-bottom:8px;"></div>
-              <div id="avalDeleteWrap" style="margin-bottom:8px;"></div>
-
-              <div style="margin-top:8px;">
-                <label class="label">Tipo de aval</label>
-                <select id="tipoAvalSelect" name="tipoAval" class="select">
-                  <option value="">-- seleccionar --</option>
-                  <option value="director_programa">Director de Programa</option>
-                  <option value="director_docencia">Director de Docencia</option>
-                </select>
-              </div>
-
-              <div id="avalFileWrap" style="margin-top:8px;">
-                <label style="font-size:0.9em;">Subir aval (PDF)</label>
-                <input type="file" accept="application/pdf" id="avalFileInput" name="avalPdf" />
-              </div>
-            </div>
-
             <div class="flex-row" style="gap:8px;">
               <button type="submit" class="btn primary" id="evtEditSubmitBtn">Guardar cambios</button>
               <button type="button" class="btn" id="evtEditCancelBtn">Cancelar</button>
@@ -246,49 +129,119 @@ export function renderMyEvents() {
   `;
 }
 
-/* ---------- helpers ---------- */
-function waitForElement(selector, timeout = 1500, pollInterval = 50) {
-  const start = Date.now();
-  return new Promise((resolve) => {
-    (function poll() {
-      const el = document.querySelector(selector);
-      if (el) return resolve(el);
-      if (Date.now() - start > timeout) return resolve(null);
-      setTimeout(poll, pollInterval);
-    })();
+/* ---------- listeners ---------- */
+export function bindMyEventsListeners() {
+  document.addEventListener('click', async (e) => {
+    if (e.target?.id === 'closeEditModal' || e.target?.id === 'evtEditCancelBtn') {
+      const modal = document.getElementById('eventEditModal');
+      if (modal) modal.style.display = 'none';
+      return;
+    }
+
+    const deleteBtn = e.target.closest('[data-delete]');
+    if (deleteBtn) {
+      const id = deleteBtn.getAttribute('data-delete');
+      if (!confirm('¿Eliminar este evento? Esta acción no se puede deshacer.')) return;
+      try {
+        const res = await fetch(`/api/events/${id}`, { method: 'DELETE' });
+        const body = await res.json();
+        if (!res.ok) { toast(body.error || 'Error eliminando evento', 'error'); return; }
+        toast('Evento eliminado correctamente', 'success');
+        const updatedEvents = getState().events.filter(ev => String(ev.idEvento || ev.id) !== String(id));
+        setState({ ...getState(), events: updatedEvents });
+      } catch (err) {
+        console.error('Error eliminando evento:', err); toast('Error eliminando evento', 'error');
+      }
+      return;
+    }
+
+    const editBtn = e.target.closest('[data-edit]');
+    if (editBtn) {
+      const id = editBtn.getAttribute('data-edit');
+      await openEventEditModal(id);
+      return;
+    }
+
+    if (e.target?.id === 'editInstSelectAll') {
+      const chk = !!e.target.checked;
+      document.querySelectorAll('#editInstList .inst-checkbox').forEach(cb => cb.checked = chk);
+      return;
+    }
+
+    if (e.target?.id === 'editHasOrg') {
+      const block = document.getElementById('editOrgBlock');
+      if (block) block.style.display = e.target.checked ? '' : 'none';
+      return;
+    }
+
+    // toggle cert delete checkbox shows/hides file input
+    if (e.target && e.target.classList && e.target.classList.contains('cert-delete')) {
+      const orgId = e.target.getAttribute('data-org');
+      const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${escapeHtml(orgId)}"]`);
+      if (fileWrap) fileWrap.style.display = e.target.checked ? '' : 'none';
+      return;
+    }
+
+    // toggle org-select shows/hides cert block area
+    if (e.target && e.target.classList && e.target.classList.contains('org-select')) {
+      const orgId = e.target.value;
+      const certBlock = document.querySelector(`#editOrgList [data-cert-block="${escapeHtml(orgId)}"]`);
+      if (certBlock) certBlock.style.display = e.target.checked ? '' : 'none';
+      return;
+    }
+
+    // org-rep checkbox handler: hide/show encargado and preserve value
+    if (e.target && e.target.classList && e.target.classList.contains('org-rep')) {
+      const orgId = e.target.getAttribute('data-org');
+      const enc = document.querySelector(`#editOrgList .org-encargado[data-org="${escapeHtml(orgId)}"]`);
+      if (!enc) return;
+      if (e.target.checked) { enc.setAttribute('data-prev', enc.value || ''); enc.value = ''; enc.style.display = 'none'; }
+      else { enc.value = enc.getAttribute('data-prev') || ''; enc.style.display = ''; }
+      return;
+    }
+  });
+
+  document.addEventListener('input', (e) => {
+    if (e.target?.id === 'editOrgFilter') {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('#editOrgList .org-item').forEach(div => {
+        div.style.display = div.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+      return;
+    }
+  });
+
+  document.addEventListener('submit', async (e) => {
+    if (e.target?.id !== 'eventEditForm') return;
+    e.preventDefault();
+    await submitEditedEvent(e.target);
   });
 }
 
-/* ---------- open edit modal (no hash changes here) ---------- */
-export async function openEventEditModal(id) {
+/* ---------- open modal and preload data ---------- */
+async function openEventEditModal(id) {
   try {
-    console.log('[openEventEditModal] called id=', id, 'modal present=', !!document.getElementById('eventEditModal'));
-    if (!id) { toast('Id de evento inválido', 'error'); return; }
+    const rEvt = await fetch(`/api/events/${id}`);
+    if (rEvt.status === 401 || rEvt.status === 403) { toast('No autorizado', 'error'); return; }
+    const evento = await rEvt.json();
+    if (!rEvt.ok || !evento) { toast('No se pudo cargar el evento', 'error'); return; }
+
+    const st = getState();
+    if (!Array.isArray(st.installations) || st.installations.length === 0) {
+      try { const rInst = await fetch('/api/installations'); const instData = await rInst.json(); setState({ ...getState(), installations: Array.isArray(instData) ? instData : [] }); } catch {}
+    }
+    if (!Array.isArray(st.organizations) || st.organizations.length === 0) {
+      try { const rOrg = await fetch('/api/organizations'); const orgData = await rOrg.json(); setState({ ...getState(), organizations: Array.isArray(orgData) ? orgData : [] }); } catch {}
+    }
+
+    const rAssoc = await fetch(`/api/organization-event/event/${id}`);
+    const assocList = rAssoc.ok ? await rAssoc.json() : [];
 
     const modal = document.getElementById('eventEditModal');
-    if (!modal) {
-      console.error('openEventEditModal: modal no encontrado');
-      toast('Modal o formulario no está disponible', 'error');
-      return;
-    }
-
-    const form = await waitForElement('#eventEditForm', 500);
-    const instList = await waitForElement('#editInstList', 500);
-    const orgList = await waitForElement('#editOrgList', 500);
-    if (!form || !instList || !orgList) {
-      console.error('openEventEditModal: elementos del formulario no encontrados', { form: !!form, instList: !!instList, orgList: !!orgList });
-      toast('Modal o formulario no está disponible', 'error');
-      return;
-    }
-
-    const opts = { method: 'GET', headers: { Accept: 'application/json' }, credentials: 'include' };
-    const user = getCurrentUser();
-    if (user?.token) opts.headers.Authorization = `Bearer ${user.token}`;
-
-    const rEvt = await fetch(`/api/events/${encodeURIComponent(id)}`, opts);
-    if (rEvt.status === 401 || rEvt.status === 403) { toast('No autorizado', 'error'); return; }
-    const evento = await rEvt.json().catch(() => null);
-    if (!rEvt.ok || !evento) { toast('No se pudo cargar el evento', 'error'); return; }
+    const form = document.getElementById('eventEditForm');
+    const instList = document.getElementById('editInstList');
+    const orgList = document.getElementById('editOrgList');
+    if (!modal || !form || !instList || !orgList) { toast('Modal o formulario no está disponible', 'error'); return; }
 
     const setIf = (selector, value) => { const el = form.querySelector(selector); if (el) el.value = value ?? ''; };
     setIf('[name="idEvento"]', evento.idEvento || evento.id || '');
@@ -300,30 +253,28 @@ export async function openEventEditModal(id) {
     setIf('[name="horaFin"]', evento.horaFin || '');
     setIf('[name="capacidad"]', evento.capacidad || '');
 
+    // instalaciones
     const installations = Array.isArray(getState().installations) ? getState().installations : [];
-    const selectedInstIds = (evento.instalaciones && Array.isArray(evento.instalaciones) && evento.instalaciones.length>0)
-      ? evento.instalaciones.map(i => String(i.idInstalacion || i.id || i))
-      : (evento.instalacionesIds ? (String(evento.instalacionesIds).split(',').map(x=>x.trim())) : []);
     instList.innerHTML = installations.map(i => {
       const iid = i.idInstalacion || i.id;
       const label = escapeHtml(i.nombre || i.ubicacion || `Instalación ${iid}`);
-      const checked = selectedInstIds.includes(String(iid));
+      const checked = Array.isArray(evento.instalaciones) && evento.instalaciones.some(x => String(x) === String(iid));
       return `<div style="padding:4px 0;"><label><input type="checkbox" class="inst-checkbox" name="instalaciones" value="${escapeHtml(iid)}" ${checked ? 'checked' : ''}> ${label}</label></div>`;
     }).join('');
 
-    // cargar asociaciones y organizaciones (best-effort)
-    let assocList = [];
-    try {
-      const rAssoc = await fetch(`/api/organization-event/event/${encodeURIComponent(id)}`, { credentials: 'include' });
-      assocList = rAssoc.ok ? await rAssoc.json().catch(()=>[]) : [];
-    } catch (e) { console.warn('No se pudo cargar associations', e); }
-
+    // map associations by org id (assoc rows include certificadoParticipacion, participante, esRepresentanteLegal, org data)
     const assocMap = {};
     (assocList || []).forEach(a => {
       const key = String(a.idOrganizacion || (a.org && a.org.idOrganizacion) || a.org_idOrganizacion || '');
       if (!key) return;
       assocMap[key] = a;
     });
+
+    const hasOrg = Object.keys(assocMap).length > 0;
+    const editHasOrgEl = document.getElementById('editHasOrg');
+    const editOrgBlockEl = document.getElementById('editOrgBlock');
+    if (editHasOrgEl) editHasOrgEl.checked = hasOrg;
+    if (editOrgBlockEl) editOrgBlockEl.style.display = hasOrg ? '' : 'none';
 
     const organizations = Array.isArray(getState().organizations) ? getState().organizations : [];
     orgList.innerHTML = organizations.length ? organizations.map(o => {
@@ -332,14 +283,32 @@ export async function openEventEditModal(id) {
       const sector = escapeHtml(o.sectorEconomico || o.sector || '');
       const lookup = assocMap[String(oid)];
       const checked = !!lookup;
+
+      // normalize esRepresentanteLegal
+      let rep = false;
+      if (lookup) {
+        const val = lookup.esRepresentanteLegal ?? lookup.representanteLegal ?? (lookup.org && lookup.org.representanteLegal);
+        rep = (val === true) || String(val).toLowerCase() === 'si' || String(val).toLowerCase() === 'true';
+      }
+
+      // participante value if exists on assoc
       const participanteVal = lookup ? (lookup.participante || '') : '';
+
+      // certificado path normalization
       let certificadoPath = lookup ? (lookup.certificadoParticipacion || null) : null;
       if (certificadoPath && !certificadoPath.startsWith('/')) {
         if (certificadoPath.startsWith('uploads/')) certificadoPath = '/' + certificadoPath;
         else certificadoPath = '/uploads/' + certificadoPath;
       }
-      const certLinkHtml = certificadoPath ? `<div style="margin-top:6px;"><a href="${escapeHtml(certificadoPath)}" target="_blank" rel="noopener noreferrer">Ver certificado actual</a></div>` : '';
-      const fileInputHtml = `<div style="margin-top:6px;"><label style="font-size:0.9em;">Reemplazar certificado (PDF)</label><input type="file" accept="application/pdf" class="org-cert" data-org="${escapeHtml(oid)}" /></div>`;
+
+      // if there's an existing certificado, show it and show a checkbox to "Eliminar anterior" before enabling file input
+      const certExistsHtml = certificadoPath ? `<div style="margin-top:6px;"><a href="${escapeHtml(certificadoPath)}" target="_blank" rel="noopener noreferrer">Ver certificado actual</a></div>` : '';
+      const deleteCheckboxHtml = certificadoPath ? `<div style="margin-top:6px;"><label><input type="checkbox" class="cert-delete" data-org="${escapeHtml(oid)}"> Borrar certificado anterior para poder subir uno nuevo</label></div>` : '';
+
+      // file input wraps start hidden unless delete checkbox is checked (for existing cert) or cert did not exist
+      const fileInputVisible = certificadoPath ? 'style="display:none;"' : '';
+      const fileInputHtml = `<div ${fileInputVisible} data-file-wrap="${escapeHtml(oid)}"><label style="font-size:0.9em;">Subir certificado (PDF)</label><input type="file" accept="application/pdf" class="org-cert" data-org="${escapeHtml(oid)}" /></div>`;
+
       return `
         <div class="org-item" data-org-id="${escapeHtml(oid)}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
           <div style="display:flex; gap:12px; align-items:flex-start;">
@@ -349,14 +318,17 @@ export async function openEventEditModal(id) {
                 <strong>${name}</strong>
                 <small style="margin-left:8px; color:#666;">— ${sector}</small>
               </div>
+
               <div style="margin-top:6px;">
                 <label style="margin-right:8px;">
-                  <input type="checkbox" class="org-rep" data-org="${escapeHtml(oid)}" ${lookup && (lookup.esRepresentanteLegal === 'si' || String(lookup.esRepresentanteLegal).toLowerCase()==='true') ? 'checked' : ''} /> Representante legal
+                  <input type="checkbox" class="org-rep" data-org="${escapeHtml(oid)}" ${rep ? 'checked' : ''} /> Representante legal
                 </label>
-                <input class="input org-encargado" data-org="${escapeHtml(oid)}" placeholder="Nombre encargado" value="${escapeHtml(participanteVal)}" style="${lookup && (lookup.esRepresentanteLegal === 'si' || String(lookup.esRepresentanteLegal).toLowerCase()==='true') ? 'display:none;' : ''}; width:60%; margin-top:6px;" />
+                <input class="input org-encargado" data-org="${escapeHtml(oid)}" placeholder="Nombre encargado" value="${escapeHtml(participanteVal)}" style="${rep ? 'display:none;' : ''}; width:60%; margin-top:6px;" />
               </div>
+
               <div style="margin-top:6px; display:${checked ? '' : 'none'};" data-cert-block="${escapeHtml(oid)}">
-                ${certLinkHtml}
+                ${certExistsHtml}
+                ${deleteCheckboxHtml}
                 ${fileInputHtml}
               </div>
             </div>
@@ -365,18 +337,17 @@ export async function openEventEditModal(id) {
       `;
     }).join('') : '<div class="muted">No hay organizaciones registradas</div>';
 
-    // mostrar modal
+    // show modal
     modal.style.display = 'block';
-    modal.setAttribute('aria-hidden', 'false');
-    setTimeout(() => form.querySelector('[name="nombre"]')?.focus(), 120);
+    setTimeout(() => form.querySelector('[name="nombre"]')?.focus(), 100);
   } catch (err) {
     console.error('Error cargando evento (edit modal):', err);
     toast('Error al cargar evento', 'error');
   }
 }
 
-/* ---------- submit edited event (keeps previous behavior: no credentials added) ---------- */
-export async function submitEditedEvent(form) {
+/* ---------- submit edited event ---------- */
+async function submitEditedEvent(form) {
   if (_isSubmittingEdit) { toast('Enviando... espera', 'info'); return; }
   _isSubmittingEdit = true;
   const submitBtn = document.getElementById('evtEditSubmitBtn');
@@ -416,6 +387,8 @@ export async function submitEditedEvent(form) {
         const encargadoValRaw = encEl ? encEl.value : '';
         const encargadoVal = encargadoValRaw ? String(encargadoValRaw).trim() : '';
 
+        // If checked as representante legal, ensure we send a non-empty participante:
+        // Priority: user-provided encargadoVal > organizationsState.representanteLegal > validation error
         let participanteValue = null;
         if (isRep) {
           if (encargadoVal) participanteValue = encargadoVal;
@@ -430,14 +403,20 @@ export async function submitEditedEvent(form) {
           if (!participanteValue) { toast('Ingrese encargado para organización sin representante legal', 'error'); throw new Error('validation'); }
         }
 
+        // Determine if user asked to delete existing cert for this org (then file input must be used to upload new one)
+        const deleteCheckbox = document.querySelector(`#editOrgList .cert-delete[data-org="${orgId}"]`);
+        const wantsDelete = !!(deleteCheckbox && deleteCheckbox.checked);
+
         organizacionesPayload.push({
           idOrganizacion: orgId,
           esRepresentanteLegal: isRep ? 'si' : 'no',
           participante: participanteValue,
-          deleteCertBeforeUpload: !!document.querySelector(`#editOrgList .cert-delete[data-org="${orgId}"]`)?.checked
+          deleteCertBeforeUpload: wantsDelete // flag auxiliar para backend if needed
         });
 
-        const certInput = document.querySelector(`#editOrgList .org-cert[data-org="${orgId}"]`);
+        // Validate file input if visible (if user wants to upload new cert)
+        const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${orgId}"]`);
+        const certInput = fileWrap ? fileWrap.querySelector('.org-cert') : document.querySelector(`#editOrgList .org-cert[data-org="${orgId}"]`);
         const cert = certInput?.files?.[0];
         if (cert && cert.type !== 'application/pdf') { toast('Certificado debe ser PDF', 'error'); throw new Error('validation'); }
       }
@@ -460,26 +439,15 @@ export async function submitEditedEvent(form) {
     sendForm.append('organizaciones', JSON.stringify(organizacionesPayload));
     sendForm.append('instalaciones', JSON.stringify(instalacionesIds));
 
-    const deleteAvalVal = fd.get('delete_aval') || '0';
-    if (deleteAvalVal === '1') sendForm.append('delete_aval', '1');
-
-    const avalFileInput = form.querySelector('#avalFileInput');
-    const avalFile = avalFileInput?.files?.[0];
-    if (avalFile) {
-      if (avalFile.type !== 'application/pdf') { toast('Aval debe ser PDF', 'error'); throw new Error('validation'); }
-      const tipoAvalSelect = form.querySelector('#tipoAvalSelect');
-      const tipoAvalValue = tipoAvalSelect ? (tipoAvalSelect.value || '') : '';
-      if (!tipoAvalValue) { toast('Seleccione el tipo de aval antes de subir el archivo', 'error'); throw new Error('validation'); }
-      sendForm.append('tipoAval', tipoAvalValue);
-      sendForm.append('avalPdf', avalFile);
-    }
-
-    if (Array.isArray(organizacionesPayload)) {
+    if (hasOrg) {
       for (const p of organizacionesPayload) {
         const oid = p.idOrganizacion;
-        const certInput = document.querySelector(`#editOrgList .org-cert[data-org="${oid}"]`);
+        const fileWrap = document.querySelector(`#editOrgList [data-file-wrap="${oid}"]`);
+        const certInput = fileWrap ? fileWrap.querySelector('.org-cert') : document.querySelector(`#editOrgList .org-cert[data-org="${oid}"]`);
         const cert = certInput?.files?.[0];
+        // only append a file when user provided one (and optionally indicated deletion first)
         if (cert) sendForm.append(`certificado_org_${oid}`, cert);
+        // forward delete flag so backend can remove previous file if requested
         if (p.deleteCertBeforeUpload) sendForm.append(`delete_cert_org_${oid}`, '1');
       }
     }
@@ -488,11 +456,10 @@ export async function submitEditedEvent(form) {
 
     const idEvento = form.querySelector('[name="idEvento"]')?.value;
     const url = `/api/events/${encodeURIComponent(idEvento)}`;
-
     const res = await fetch(url, { method: 'PUT', body: sendForm });
     if (res.status === 401 || res.status === 403) { toast('Sesión expirada', 'error'); navigateTo('login'); return; }
-    const data = await res.json().catch(()=>null);
-    if (!res.ok) { console.error('Backend error events PUT:', data); toast(data?.error || data?.message || 'Error actualizando evento', 'error'); return; }
+    const data = await res.json();
+    if (!res.ok) { console.error('Backend error events PUT:', data); toast(data.error || data.message || 'Error actualizando evento', 'error'); return; }
 
     toast('Evento actualizado correctamente', 'success');
     const st = getState();
@@ -509,105 +476,4 @@ export async function submitEditedEvent(form) {
     _isSubmittingEdit = false;
     if (submitBtn) submitBtn.disabled = false;
   }
-}
-
-/* ---------- listeners binding ---------- */
-export function bindMyEventsListeners() {
-  const container = document.getElementById('view') || document;
-
-  container.addEventListener('click', async (e) => {
-    // prevent default for anchors to reduce accidental hash changes
-    const anchor = e.target.closest && e.target.closest('a[href]');
-    if (anchor) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
-    const editBtn = e.target.closest && e.target.closest('[data-edit]');
-    const deleteBtn = e.target.closest && e.target.closest('[data-delete]');
-
-    if (editBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      const id = editBtn.getAttribute('data-edit');
-      console.log('[myEvents] Edit clicked id=', id);
-      await openEventEditModal(id);
-      return;
-    }
-
-    if (deleteBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      const id = deleteBtn.getAttribute('data-delete');
-      if (!confirm('¿Eliminar este evento?')) return;
-      try {
-        const res = await fetch(`/api/events/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        const body = await res.json().catch(()=>null);
-        if (!res.ok) { toast(body?.error || 'Error eliminando evento', 'error'); return; }
-        toast('Evento eliminado', 'success');
-        const updated = (getState().events || []).filter(ev => String(ev.idEvento || ev.id) !== String(id));
-        setState({ ...getState(), events: updated });
-      } catch (err) { console.error(err); toast('Error eliminando evento', 'error'); }
-      return;
-    }
-
-    if (e.target?.id === 'closeEditModal' || e.target?.id === 'evtEditCancelBtn') {
-      const modal = document.getElementById('eventEditModal');
-      if (modal) modal.style.display = 'none';
-      return;
-    }
-
-    if (e.target?.id === 'editInstSelectAll') {
-      const checked = !!e.target.checked;
-      document.querySelectorAll('#editInstList .inst-checkbox').forEach(cb => cb.checked = checked);
-      return;
-    }
-
-    if (e.target?.id === 'editHasOrg') {
-      const block = document.getElementById('editOrgBlock');
-      if (block) block.style.display = e.target.checked ? '' : 'none';
-      return;
-    }
-
-    if (e.target && e.target.classList && e.target.classList.contains('org-select')) {
-      const orgId = e.target.value;
-      const certBlock = document.querySelector(`#editOrgList [data-cert-block="${escapeHtml(orgId)}"]`);
-      if (certBlock) certBlock.style.display = e.target.checked ? '' : 'none';
-      return;
-    }
-
-    if (e.target && e.target.classList && e.target.classList.contains('org-rep')) {
-      const orgId = e.target.getAttribute('data-org');
-      const enc = document.querySelector(`#editOrgList .org-encargado[data-org="${escapeHtml(orgId)}"]`);
-      if (!enc) return;
-      if (e.target.checked) { enc.setAttribute('data-prev', enc.value || ''); enc.value = ''; enc.style.display = 'none'; }
-      else { enc.value = enc.getAttribute('data-prev') || ''; enc.style.display = ''; }
-      return;
-    }
-
-    if (e.target && e.target.classList && e.target.classList.contains('aval-delete')) {
-      const chk = e.target.checked;
-      const fileWrap = document.getElementById('avalFileWrap');
-      const deleteHiddenInput = document.querySelector('input[name="delete_aval"]');
-      if (fileWrap) fileWrap.style.display = chk ? '' : 'none';
-      if (deleteHiddenInput) deleteHiddenInput.value = chk ? '1' : '0';
-      return;
-    }
-  });
-
-  container.addEventListener('input', (e) => {
-    if (e.target?.id === 'editOrgFilter') {
-      const q = e.target.value.toLowerCase();
-      document.querySelectorAll('#editOrgList .org-item').forEach(div => {
-        div.style.display = div.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
-      return;
-    }
-  });
-
-  container.addEventListener('submit', async (e) => {
-    if (e.target?.id !== 'eventEditForm') return;
-    e.preventDefault();
-    await submitEditedEvent(e.target);
-  });
 }

@@ -6,8 +6,14 @@ import { navigateTo } from '../utils/router.js';
 
 /*
   Events UI module (completo)
-  - Validación cliente: capacidad del evento comparada contra suma de capacidades de instalaciones seleccionadas
-  - Envío FormData compatible con backend (evento JSON, organizaciones JSON, archivos dinámicos)
+  - Soporta selección de instalaciones mediante checkboxes (más usable que multi-select)
+  - Envía en FormData:
+      - 'evento' (JSON) que contiene `instalaciones: [idInstalacion, ...]`
+      - 'tipoAval', 'avalPdf'
+      - 'organizaciones' (JSON) y archivos dinámicos 'certificado_org_<id>'
+      - 'certificadoParticipacion' (opcional)
+  - Mantiene editor inline de organizaciones, control de permisos por created_by
+  - Valida y limpia archivos, maneja transacciones front->backend
 */
 
 const SECTORES_ECONOMICOS = [
@@ -45,21 +51,8 @@ async function ensureLookups() {
       setState({ ...getState(), organizations: [] });
     }
   }
-
-  if (!Array.isArray(st.events) || st.events.length === 0) {
-    try {
-      const r3 = await fetch('/api/events');
-      if (r3.status === 401 || r3.status === 403) return;
-      const data3 = await r3.json();
-      setState({ ...getState(), events: Array.isArray(data3) ? data3 : [] });
-    } catch (err) {
-      console.warn('Error loading events', err);
-      setState({ ...getState(), events: [] });
-    }
-  }
 }
 
-/* ---------- render ---------- */
 export async function renderEvents() {
   await ensureLookups();
   const st = getState();
@@ -81,12 +74,11 @@ export async function renderEvents() {
   const instCheckboxesHtml = installations.map(i => {
     const id = escapeHtml(i.idInstalacion || i.id || '');
     const label = escapeHtml(i.nombre || i.ubicacion || i.descripcion || i.ciudad || `Instalación ${id}`);
-    const cap = (i.capacidad !== undefined && i.capacidad !== null) ? ` (capacidad: ${escapeHtml(String(i.capacidad))})` : '';
     return `
       <div class="inst-item" style="display:flex; align-items:center; gap:8px; padding:4px 0;">
         <label style="display:flex; align-items:center; gap:8px;">
           <input type="checkbox" class="inst-checkbox" value="${id}" data-inst="${id}" />
-          <span>${label}${cap}</span>
+          <span>${label}</span>
         </label>
       </div>
     `;
@@ -155,11 +147,6 @@ export async function renderEvents() {
                   <option value="ludico">ludico</option>
                 </select>
               </div>
-              <div style="width:140px;">
-                <label class="label">Capacidad</label>
-                <input class="input" name="capacidad" id="capacidadEvento" type="number" min="1" step="1" placeholder="Personas" />
-                <small id="capSummary" style="display:block; color:#666; margin-top:6px;"></small>
-              </div>
             </div>
 
             <div class="flex gap-12">
@@ -169,6 +156,7 @@ export async function renderEvents() {
 
             <div class="flex gap-12">
               <div style="flex:1"><label class="label">Hora fin</label><input class="input" name="horaFin" type="time" required></div>
+              <div style="flex:1"><label class="label">Capacidad (opcional)</label><input class="input" name="capacidad" type="number" min="1"></div>
             </div>
 
             <div>
@@ -182,6 +170,11 @@ export async function renderEvents() {
             </div>
 
             <div><label class="label">Ubicación / descripción corta</label><input class="input" name="ubicacion" placeholder="Salón, dirección, etc."></div>
+
+            <div>
+              <label class="label">Descripción (opcional)</label>
+              <textarea class="textarea" name="descripcion"></textarea>
+            </div>
 
             <div>
               <label><input type="checkbox" id="evtHasOrg" name="hasOrganization"> Participa organización externa</label>
@@ -222,6 +215,8 @@ export async function renderEvents() {
         </div>
       </div>
     </div>
+
+    <!-- modal placeholder inserted to body by ensureOrgInlineEditorExists -->
   `;
 }
 
@@ -283,11 +278,6 @@ function bindEventListenersInner() {
       });
       return;
     }
-
-    // when capacity input changes, update cap summary
-    if (e.target?.id === 'capacidadEvento' || e.target?.classList?.contains('inst-checkbox')) {
-      updateCapacitySummary();
-    }
   });
 
   // CHANGE delegated
@@ -318,13 +308,6 @@ function bindEventListenersInner() {
     if (e.target?.id === 'instSelectAll') {
       const checked = !!e.target.checked;
       document.querySelectorAll('.inst-checkbox').forEach(cb => cb.checked = checked);
-      updateCapacitySummary();
-      return;
-    }
-
-    // installation checkbox changed
-    if (e.target && e.target.classList && e.target.classList.contains('inst-checkbox')) {
-      updateCapacitySummary();
       return;
     }
   });
@@ -343,7 +326,6 @@ function bindEventListenersInner() {
       const form = document.querySelector('#eventForm');
       if (form) form.reset();
       const block = document.querySelector('#evtOrgBlock'); if (block) block.style.display = 'none';
-      updateCapacitySummary();
       return;
     }
 
@@ -367,6 +349,7 @@ function bindEventListenersInner() {
       const payload = {};
       for (const [k,v] of fdOrg.entries()) payload[k] = (typeof v === 'string') ? v.trim() : v;
 
+      // attach idUsuario required by DB
       const user = getCurrentUser();
       if (!user || !user.id) { toast('Sesión expirada', 'error'); navigateTo('login'); return; }
       payload.idUsuario = String(user.id);
@@ -441,29 +424,6 @@ function bindEventListenersInner() {
       }
       return;
     }
-
-    // continue click delegated handlers (rest)
-    if (e.target && e.target.matches && e.target.matches('button[data-edit]')) {
-      const id = e.target.getAttribute('data-edit');
-      if (!id) return;
-      navigateTo(`events/edit/${encodeURIComponent(id)}`);
-      return;
-    }
-
-    if (e.target && e.target.matches && e.target.matches('button[data-delete]')) {
-      const id = e.target.getAttribute('data-delete');
-      if (!id) return;
-      if (!confirm('¿Eliminar este evento?')) return;
-      try {
-        const res = await fetch(`/api/events/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        const body = await res.json();
-        if (!res.ok) { toast(body.error || 'Error eliminando evento', 'error'); return; }
-        toast('Evento eliminado', 'success');
-        const st = getState();
-        setState({ ...st, events: (st.events || []).filter(ev => String(ev.idEvento||ev.id) !== String(id)) });
-      } catch (err) { console.error(err); toast('Error eliminando evento', 'error'); }
-      return;
-    }
   });
 
   // SUBMIT delegated (only eventForm)
@@ -486,15 +446,16 @@ function bindEventListenersInner() {
       const avalFile = evtForm.querySelector('input[name="avalPdf"]')?.files?.[0];
       const certFileGeneral = evtForm.querySelector('input[name="certificadoParticipacion"]')?.files?.[0];
 
-      // validations basic
+      // validations
       if (!raw.nombre) { toast('Nombre del evento requerido', 'error'); throw new Error('validation'); }
-      if (!raw.tipo) { toast('Tipo del evento requerido', 'error'); throw new Error('validation'); }
+      if (!raw.tipo) { toast('Tipo de evento requerido', 'error'); throw new Error('validation'); }
       if (!raw.fecha) { toast('Fecha del evento requerida', 'error'); throw new Error('validation'); }
       if (!raw.hora) { toast('Hora inicio del evento requerida', 'error'); throw new Error('validation'); }
       if (!raw.horaFin) { toast('Hora fin del evento requerida', 'error'); throw new Error('validation'); }
       if (new Date(raw.fecha) < new Date(todayISO())) { toast('Fecha debe ser hoy o futura', 'error'); throw new Error('validation'); }
       if (raw.horaFin <= raw.hora) { toast('Hora fin debe ser mayor que hora inicio', 'error'); throw new Error('validation'); }
 
+      // instalaciones seleccionadas (checkboxes)
       const instalacionCheckboxes = Array.from(evtForm.querySelectorAll('.inst-checkbox'));
       const instalacionesIds = instalacionCheckboxes.filter(cb => cb.checked).map(cb => cb.value).filter(Boolean);
       if (!instalacionesIds || instalacionesIds.length === 0) { toast('Seleccione al menos una instalación', 'error'); throw new Error('validation'); }
@@ -504,52 +465,11 @@ function bindEventListenersInner() {
       if (!tipoAval) { toast('Seleccione el tipo de aval', 'error'); throw new Error('validation'); }
       if (avalFile.type !== 'application/pdf') { toast('El aval debe ser PDF', 'error'); throw new Error('validation'); }
 
-      // capacidad client-side: sum capacities of selected installations
-      const capacidadRaw = fd.get('capacidad') || fd.get('capacidadEvento') || null;
-      const capacidad = capacidadRaw ? Number(capacidadRaw) : null;
-      if (capacidad !== null && (!Number.isInteger(capacidad) || capacidad < 1)) { toast('Capacidad inválida', 'error'); throw new Error('validation'); }
-
-      if (capacidad !== null) {
-        // sum capacities from state
-        const st = getState();
-        const installationsState = Array.isArray(st.installations) ? st.installations : [];
-        let sumCap = 0;
-        for (const iid of instalacionesIds) {
-          const inst = installationsState.find(x => String(x.idInstalacion || x.id) === String(iid));
-          const capInst = inst && (inst.capacidad !== undefined && inst.capacidad !== null) ? Number(inst.capacidad) : null;
-          if (capInst === null || !Number.isInteger(capInst)) {
-            toast(`Instalación ${iid} sin capacidad definida`, 'error'); throw new Error('validation');
-          }
-          sumCap += capInst;
-        }
-        const capSummaryEl = document.querySelector('#capSummary');
-        if (capSummaryEl) capSummaryEl.textContent = `Capacidad total instalaciones seleccionadas: ${sumCap}`;
-        if (sumCap < capacidad) { toast(`Capacidad total instalaciones (${sumCap}) menor que capacidad del evento (${capacidad})`, 'error'); throw new Error('validation'); }
-      }
-
-      // organizations payload
-      const organizacionesPayload = [];
-      if (evtForm.querySelector('#evtHasOrg')?.checked) {
-        const selectedOrgs = Array.from(evtForm.querySelectorAll('#orgSelectList input.org-select:checked'));
-        if (!selectedOrgs.length) { toast('Seleccione al menos una organización participante', 'error'); throw new Error('validation'); }
-        for (const cb of selectedOrgs) {
-          const oid = cb.value;
-          const repEl = document.querySelector(`#orgSelectList .org-rep[data-org="${oid}"]`);
-          const isRep = !!(repEl && repEl.checked);
-          const encEl = document.querySelector(`#orgSelectList .org-encargado[data-org="${oid}"]`);
-          const encargado = encEl ? encEl.value.trim() : '';
-          let participante = encargado || null;
-          if (isRep && !participante) {
-            const orgRec = (getState().organizations || []).find(x => String(x.idOrganizacion||x.id) === String(oid));
-            participante = orgRec ? (orgRec.representanteLegal || orgRec.representante || null) : null;
-            if (!participante) { toast(`Falta representante legal para organización ${oid}`, 'error'); throw new Error('validation'); }
-          }
-          organizacionesPayload.push({ idOrganizacion: oid, esRepresentanteLegal: isRep ? 'si' : 'no', participante });
-        }
-      }
-
-      // build FormData to send
+      const hasOrg = !!evtForm.querySelector('#evtHasOrg')?.checked;
+      let organizacionesPayload = [];
       const sendForm = new FormData();
+
+      // build evento payload including instalaciones array
       const payloadEvento = {
         idUsuario: raw.idUsuario || getCurrentUser()?.id,
         instalaciones: instalacionesIds,
@@ -560,29 +480,47 @@ function bindEventListenersInner() {
         hora: raw.hora,
         horaFin: raw.horaFin,
         ubicacion: raw.ubicacion || '',
-        capacidad: capacidad !== null ? capacidad : null,
+        capacidad: raw.capacidad ? Number(raw.capacidad) : null,
         descripcion: raw.descripcion || ''
       };
+
       sendForm.append('evento', JSON.stringify(payloadEvento));
       sendForm.append('tipoAval', tipoAval);
       if (avalFile) sendForm.append('avalPdf', avalFile);
 
-      // org certificates
-      if (organizacionesPayload.length) {
-        for (const org of organizacionesPayload) {
-          const certInput = document.querySelector(`#orgSelectList .org-cert[data-org="${org.idOrganizacion}"]`);
-          const cert = certInput?.files?.[0];
+      if (hasOrg) {
+        const selected = Array.from(evtForm.querySelectorAll('#orgSelectList input.org-select:checked'));
+        if (selected.length === 0) { toast('Seleccione al menos una organización participante', 'error'); throw new Error('validation'); }
+
+        for (const cb of selected) {
+          const orgId = cb.value;
+          const repInput = document.querySelector(`.org-rep[data-org="${orgId}"]`);
+          const isRep = repInput ? !!repInput.checked : false;
+          const encargadoInput = document.querySelector(`.org-encargado[data-org="${orgId}"]`);
+          const encargadoVal = encargadoInput ? (encargadoInput.value || '') : '';
+          if (!isRep && !encargadoVal) { toast('Ingrese encargado para una organización sin representante legal', 'error'); throw new Error('validation'); }
+
+          const participante = isRep ? null : encargadoVal;
+          organizacionesPayload.push({
+            idOrganizacion: orgId,
+            representanteLegal: isRep ? 'si' : 'no',
+            participante: participante
+          });
+
+          const certFileInput = document.querySelector(`.org-cert[data-org="${orgId}"]`);
+          const cert = certFileInput?.files?.[0];
           if (cert) {
             if (cert.type !== 'application/pdf') { toast('Certificado debe ser PDF', 'error'); throw new Error('validation'); }
-            sendForm.append(`certificado_org_${org.idOrganizacion}`, cert);
+            sendForm.append(`certificado_org_${orgId}`, cert);
           }
         }
-        sendForm.append('organizaciones', JSON.stringify(organizacionesPayload));
-      }
 
-      if (certFileGeneral) {
-        if (certFileGeneral.type !== 'application/pdf') { toast('Certificado general debe ser PDF', 'error'); throw new Error('validation'); }
-        sendForm.append('certificadoParticipacion', certFileGeneral);
+        if (certFileGeneral) {
+          if (certFileGeneral.type !== 'application/pdf') { toast('Certificado general debe ser PDF', 'error'); throw new Error('validation'); }
+          sendForm.append('certificadoParticipacion', certFileGeneral);
+        }
+
+        sendForm.append('organizaciones', JSON.stringify(organizacionesPayload));
       }
 
       const res = await fetch('/api/events', { method: 'POST', body: sendForm });
@@ -598,7 +536,7 @@ function bindEventListenersInner() {
       toast('Evento creado', 'success');
       evtForm.reset();
       const evtOrgBlock = document.querySelector('#evtOrgBlock'); if (evtOrgBlock) evtOrgBlock.style.display = 'none';
-      updateCapacitySummary();
+
       const tbody = document.querySelector('#eventsTable tbody');
       if (tbody) {
         tbody.innerHTML = (Array.isArray(getState().events)?getState().events:[])
@@ -622,42 +560,123 @@ function bindEventListenersInner() {
   });
 }
 
-/* ---------- capacity helper ---------- */
-function updateCapacitySummary() {
-  const form = document.querySelector('#eventForm');
-  if (!form) return;
-  const capacidadRaw = form.querySelector('#capacidadEvento')?.value || null;
-  const capacidad = capacidadRaw ? Number(capacidadRaw) : null;
-  const selected = Array.from(form.querySelectorAll('.inst-checkbox:checked')).map(cb => cb.value);
+/* ---------- editor open/close and ensure modal ---------- */
+
+function openOrgInlineEditor(id) {
+  ensureOrgInlineEditorExists();
+  const modal = document.querySelector('#orgModal');
+  const form = document.querySelector('#orgInlineForm');
+  if (!modal || !form) { console.warn('editor not found'); return; }
+
+  const inputId = form.querySelector('input[name="id"]');
+  const name = form.querySelector('input[name="nombre"]');
+  const rep = form.querySelector('input[name="representanteLegal"]');
+  const sector = form.querySelector('select[name="sectorEconomico"]');
+  const ubic = form.querySelector('input[name="ubicacion"]');
+  const dir = form.querySelector('input[name="direccion"]');
+  const ciudad = form.querySelector('input[name="ciudad"]');
+  const actividad = form.querySelector('input[name="actividadPrincipal"]');
+  const telefono = form.querySelector('input[name="telefono"]');
+
+  if (!id) {
+    inputId.value = '';
+    name.value = '';
+    rep.value = '';
+    if (sector) sector.value = '';
+    if (ubic) ubic.value = '';
+    if (dir) dir.value = '';
+    if (ciudad) ciudad.value = '';
+    if (actividad) actividad.value = '';
+    if (telefono) telefono.value = '';
+    modal.classList.add('open');
+    name.focus();
+    return;
+  }
+
   const st = getState();
-  const installationsState = Array.isArray(st.installations) ? st.installations : [];
-  let sumCap = 0;
-  let undef = [];
-  for (const iid of selected) {
-    const inst = installationsState.find(x => String(x.idInstalacion || x.id) === String(iid));
-    const capInst = inst && (inst.capacidad !== undefined && inst.capacidad !== null) ? Number(inst.capacidad) : null;
-    if (capInst === null) undef.push(iid);
-    else sumCap += capInst;
-  }
-  const el = document.querySelector('#capSummary');
-  if (!el) return;
-  if (selected.length === 0) {
-    el.textContent = '';
-    return;
-  }
-  if (undef.length) {
-    el.textContent = `Algunas instalaciones no tienen capacidad definida: ${undef.join(', ')}`;
-    el.style.color = '#b00';
-    return;
-  }
-  el.style.color = '#666';
-  el.textContent = `Capacidad total instalaciones seleccionadas: ${sumCap}` + (capacidad !== null ? ` — Evento pide: ${capacidad}` : '');
+  const org = (st.organizations || []).find(o => String(o.idOrganizacion||o.id) === String(id));
+  if (!org) { toast('Organización no encontrada', 'error'); return; }
+  const user = getCurrentUser();
+  const ownerId = String(org.created_by || org.createdBy || '');
+  if (!user || (ownerId && String(user.id) !== ownerId)) { toast('No autorizado', 'error'); return; }
+
+  inputId.value = org.idOrganizacion || org.id || '';
+  name.value = org.nombre || '';
+  rep.value = org.representanteLegal || '';
+  if (sector) sector.value = org.sectorEconomico || org.sector || '';
+  if (ubic) ubic.value = org.ubicacion || '';
+  if (dir) dir.value = org.direccion || '';
+  if (ciudad) ciudad.value = org.ciudad || '';
+  if (actividad) actividad.value = org.actividadPrincipal || '';
+  if (telefono) telefono.value = org.telefono || '';
+  modal.classList.add('open');
+  name.focus();
 }
 
-/* ---------- org inline editor (mantener como en tu versión) ---------- */
-/* Reutiliza las funciones ensureOrgInlineEditorExists, openOrgInlineEditor, closeOrgInlineEditor,
-   bindEventListeners (público) tal como ya tienes en tu código. Para no duplicar, las dejo intactas. */
+function closeOrgInlineEditor() {
+  const modal = document.querySelector('#orgModal');
+  const form = document.querySelector('#orgInlineForm');
+  if (!modal || !form) return;
+  modal.classList.remove('open');
+  form.reset();
+}
 
+function ensureOrgInlineEditorExists() {
+  if (document.querySelector('#orgModal')) return;
+
+  const html = `
+    <div id="orgModal" class="modal" aria-hidden="true">
+      <div class="sheet" role="dialog" aria-modal="true" id="orgInlineEditor">
+        <div class="head" style="display:flex; justify-content:space-between; align-items:center;">
+          <strong>Organización</strong>
+          <div>
+            <button type="button" id="orgInlineCancel" class="btn">✕</button>
+          </div>
+        </div>
+        <div class="body" style="max-height:70vh; overflow:auto; padding:12px;">
+          <form id="orgInlineForm" class="flex-col gap-8" autocomplete="off">
+            <input type="hidden" name="id" value="">
+            <div class="form-group"><label>Nombre</label><input class="input" name="nombre" required></div>
+            <div class="form-group"><label>Representante Legal</label><input class="input" name="representanteLegal" required></div>
+            <div class="form-group"><label>Sector</label>
+              <select class="select" name="sectorEconomico" required>
+                <option value="">- Seleccionar sector -</option>
+                ${SECTORES_ECONOMICOS.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group"><label>Ubicación / sede</label><input class="input" name="ubicacion"></div>
+            <div class="form-group"><label>Dirección</label><input class="input" name="direccion"></div>
+            <div class="form-group"><label>Ciudad</label><input class="input" name="ciudad"></div>
+            <div class="form-group"><label>Actividad principal</label><input class="input" name="actividadPrincipal"></div>
+            <div class="form-group"><label>Teléfono</label><input class="input" name="telefono" type="tel"></div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+              <button type="button" id="orgInlineSaveBtn" class="btn primary">Guardar organización</button>
+              <button type="button" id="orgInlineCancelBottom" class="btn">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+  try {
+    document.body.insertAdjacentHTML('beforeend', html);
+    const b = document.querySelector('#orgInlineCancelBottom');
+    if (b) b.addEventListener('click', () => closeOrgInlineEditor());
+    const topCancel = document.querySelector('#orgInlineCancel');
+    if (topCancel) topCancel.addEventListener('click', () => closeOrgInlineEditor());
+    document.body.addEventListener('click', (ev) => {
+      const modal = document.querySelector('#orgModal');
+      const sheet = document.querySelector('#orgInlineEditor');
+      if (!modal || !sheet) return;
+      if (!modal.classList.contains('open')) return;
+      if (ev.target === modal) closeOrgInlineEditor();
+    });
+  } catch (err) {
+    console.warn('Could not inject orgModal', err);
+  }
+}
+
+/* ---------- public bind ---------- */
 export function bindEventListeners() {
   if (_eventsBound) return;
   _eventsBound = true;
@@ -665,12 +684,7 @@ export function bindEventListeners() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  try { ensureLookups(); } catch (e) { /* noop */ }
+  try { ensureOrgInlineEditorExists(); } catch (e) { /* noop */ }
   bindEventListeners();
   setTimeout(bindEventListeners, 100);
 });
-
-export default {
-  render: renderEvents,
-  bind: bindEventListeners
-};

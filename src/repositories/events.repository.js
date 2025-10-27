@@ -1,10 +1,7 @@
 // src/repositories/events.repository.js
 import pool from '../db/pool.js';
+import path from 'path';
 
-/**
- * Cache de columnas por tabla para evitar queries repetidas a INFORMATION_SCHEMA.
- * key: tableName, value: Set(columnName)
- */
 const tableColumnsCache = new Map();
 
 async function getTableColumns(tableName) {
@@ -25,7 +22,7 @@ async function getTableColumns(tableName) {
 function pickPayloadFields(payload, allowedCols) {
   const entries = [];
   const values = [];
-  for (const key of Object.keys(payload)) {
+  for (const key of Object.keys(payload || {})) {
     if (allowedCols.has(key)) {
       entries.push(key);
       values.push(payload[key]);
@@ -37,26 +34,27 @@ function pickPayloadFields(payload, allowedCols) {
 export async function insert(evento, conn) {
   const connection = conn || pool;
   const allowedCols = await getTableColumns('evento');
-
-  // pick only keys that exist in the table
   const { entries, values } = pickPayloadFields(evento, allowedCols);
 
   if (entries.length === 0) {
-    throw Object.assign(new Error('No hay campos válidos para insertar en evento'), { status: 400 });
+    const err = new Error('No hay campos válidos para insertar en evento');
+    err.status = 400;
+    throw err;
   }
 
   const placeholders = entries.map(() => '?').join(', ');
   const columnsSql = entries.map(c => `\`${c}\``).join(', ');
   const sql = `INSERT INTO evento (${columnsSql}) VALUES (${placeholders})`;
-  const [result] = await connection.query(sql, values);
 
+  const [result] = await connection.query(sql, values);
   const insertedId = result.insertId;
   const [rows] = await connection.query('SELECT * FROM evento WHERE idEvento = ? LIMIT 1', [insertedId]);
   return rows[0] || null;
 }
 
 export async function findById(id) {
-  const [rows] = await pool.query(`
+  const [rows] = await pool.query(
+    `
     SELECT 
       e.*,
       u.nombre as organizadorNombre,
@@ -75,12 +73,13 @@ export async function findById(id) {
     WHERE e.idEvento = ?
     GROUP BY e.idEvento, a.avalPdf, a.tipoAval
     LIMIT 1
-  `, [id]);
-  
+    `,
+    [id]
+  );
+
   if (!rows || rows.length === 0) return null;
-  
   const evento = rows[0];
-  
+
   return {
     ...evento,
     nombre: evento.nombre || '',
@@ -96,11 +95,12 @@ export async function findById(id) {
     organizadorNombre: `${evento.organizadorNombre || ''} ${evento.organizadorApellidos || ''}`.trim(),
     organizadorEmail: evento.organizadorEmail || '',
     organizadorTelefono: evento.organizadorTelefono || '',
-    instalaciones: evento.instalacionesNombres ? 
-      evento.instalacionesNombres.split(',').map((nombre, idx) => ({
-        nombre: nombre.trim(),
-        idInstalacion: (evento.instalacionesIds || '').split(',')[idx]
-      })) : []
+    instalaciones: evento.instalacionesNombres
+      ? evento.instalacionesNombres.split(',').map((nombre, idx) => ({
+          nombre: nombre.trim(),
+          idInstalacion: (evento.instalacionesIds || '').split(',')[idx]
+        }))
+      : []
   };
 }
 
@@ -122,7 +122,9 @@ export async function updateById(id, payload, conn) {
   const allowedCols = await getTableColumns('evento');
   const { entries, values } = pickPayloadFields(payload, allowedCols);
   if (entries.length === 0) {
-    throw Object.assign(new Error('No hay campos válidos para actualizar en evento'), { status: 400 });
+    const err = new Error('No hay campos válidos para actualizar en evento');
+    err.status = 400;
+    throw err;
   }
   const setSql = entries.map(k => `\`${k}\` = ?`).join(', ');
   const sql = `UPDATE evento SET ${setSql} WHERE idEvento = ?`;
@@ -131,17 +133,12 @@ export async function updateById(id, payload, conn) {
   return rows[0] || null;
 }
 
-export async function deleteById(id) {
-  const [result] = await pool.query('DELETE FROM evento WHERE idEvento = ?', [id]);
+export async function deleteById(id, conn) {
+  const connection = conn || pool;
+  const [result] = await connection.query('DELETE FROM evento WHERE idEvento = ?', [id]);
   return result.affectedRows > 0;
 }
 
-/* ---------- helper functions to attach files to event ---------- */
-
-/**
- * Attach aval info to event row. If your evento table already has avalPdf/tipoAval columns,
- * this will update them. Otherwise, implement alternative storage.
- */
 export async function attachAval(idEvento, { avalPdf, tipoAval }, conn) {
   const connection = conn || pool;
   const allowedCols = await getTableColumns('evento');
@@ -162,23 +159,15 @@ export async function attachAval(idEvento, { avalPdf, tipoAval }, conn) {
   return rows[0] || null;
 }
 
-/**
- * Attach general certificate path to event (certificadoParticipacion column)
- */
 export async function attachGeneralCertificate(idEvento, { certificadoParticipacion }, conn) {
   const connection = conn || pool;
   const allowedCols = await getTableColumns('evento');
-  if (!allowedCols.has('certificadoParticipacion')) {
-    return null;
-  }
+  if (!allowedCols.has('certificadoParticipacion')) return null;
   await connection.query('UPDATE evento SET `certificadoParticipacion` = ? WHERE idEvento = ?', [certificadoParticipacion, idEvento]);
   const [rows] = await connection.query('SELECT * FROM evento WHERE idEvento = ? LIMIT 1', [idEvento]);
   return rows[0] || null;
 }
-  
-// ============================================
-// NUEVA FUNCIÓN PARA DASHBOARD DE SECRETARIAS
-// ============================================
+
 export async function getAllEventsWithDetails() {
   const [rows] = await pool.query(`
     SELECT 
@@ -198,8 +187,8 @@ export async function getAllEventsWithDetails() {
     GROUP BY e.idEvento, a.avalPdf, a.tipoAval
     ORDER BY e.fecha DESC, e.hora DESC
   `);
-  
-  return rows.map(row => ({
+
+  return (rows || []).map(row => ({
     ...row,
     capacidad: row.capacidad !== undefined && row.capacidad !== null ? row.capacidad : null,
     ubicacion: row.ubicacion || '',
@@ -209,7 +198,8 @@ export async function getAllEventsWithDetails() {
     organizadorNombre: `${row.organizadorNombre || ''} ${row.organizadorApellidos || ''}`.trim(),
     organizadorEmail: row.organizadorEmail || '',
     organizadorTelefono: row.organizadorTelefono || '',
-    instalaciones: row.instalacionesNombres ? 
-      row.instalacionesNombres.split(',').map(nombre => ({ nombre: nombre.trim() })) : []
+    instalaciones: row.instalacionesNombres
+      ? row.instalacionesNombres.split(',').map(nombre => ({ nombre: nombre.trim() }))
+      : []
   }));
 }

@@ -3,6 +3,7 @@ const routes = [
   'dashboard',
   'profile',
   'my-events',
+  'organizations', 
   'events',
   'users',
   'calendar',

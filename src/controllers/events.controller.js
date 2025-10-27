@@ -1,7 +1,7 @@
 // src/controllers/events.controller.js
 import * as svc from '../services/events.service.js';
-import fs from 'fs';
 
+/* Helpers */
 function mapFilesArrayToDict(filesArray = []) {
   const dict = {};
   for (const f of filesArray) {
@@ -11,26 +11,34 @@ function mapFilesArrayToDict(filesArray = []) {
   return dict;
 }
 
+function parseJSONSafe(raw) {
+  if (!raw && raw !== '') return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+/* GET /api/events */
 export async function getAll(req, res) {
   try {
     const list = await svc.getAllEvents();
-    res.json(list);
+    return res.json(list);
   } catch (err) {
     console.error('events.controller.getAll error:', err);
-    res.status(500).json({ error: 'Error obteniendo eventos' });
+    return res.status(500).json({ error: 'Error obteniendo eventos' });
   }
 }
 
+/* GET /api/events/for-secretaria */
 export async function getEventsForSecretaria(req, res) {
   try {
     const list = await svc.getEventsForSecretaria();
-    res.json(list);
+    return res.json(list);
   } catch (err) {
     console.error('events.controller.getEventsForSecretaria error:', err);
-    res.status(500).json({ error: 'Error obteniendo eventos para secretaria' });
+    return res.status(500).json({ error: 'Error obteniendo eventos para secretaria' });
   }
 }
 
+/* POST /api/events/evaluate */
 export async function evaluateEvent(req, res) {
   try {
     const filesDict = mapFilesArrayToDict(req.files || []);
@@ -38,6 +46,8 @@ export async function evaluateEvent(req, res) {
     const actaFile = filesDict['actaAprobacion'] ? filesDict['actaAprobacion'][0] : null;
     const idSecretaria = req.user?.id || req.body.idSecretaria;
 
+    if (!idEvento) return res.status(400).json({ error: 'idEvento requerido' });
+    if (!estado) return res.status(400).json({ error: 'estado requerido' });
     if (!idSecretaria) return res.status(401).json({ error: 'Secretaria no identificada' });
 
     const result = await svc.evaluateEvent({
@@ -48,138 +58,112 @@ export async function evaluateEvent(req, res) {
       idSecretaria
     });
 
-    res.json(result);
+    return res.json(result);
   } catch (err) {
     console.error('events.controller.evaluateEvent error:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Error evaluando evento' });
+    return res.status(err.status || 500).json({ error: err.message || 'Error evaluando evento' });
   }
 }
 
+/* GET /api/events/:id */
 export async function getById(req, res) {
   try {
-    const ev = await svc.getEventById(req.params.id);
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ error: 'Id requerido' });
+
+    const ev = await svc.getEventById(id);
     if (!ev) return res.status(404).json({ error: 'Evento no encontrado' });
-    res.json(ev);
+    return res.json(ev);
   } catch (err) {
     console.error('events.controller.getById error:', err);
-    res.status(500).json({ error: 'Error obteniendo evento' });
+    return res.status(500).json({ error: 'Error obteniendo evento' });
   }
 }
 
+/* POST /api/events */
 export async function create(req, res) {
   try {
     const filesDict = mapFilesArrayToDict(req.files || []);
     const eventoRaw = req.body.evento;
     if (!eventoRaw) return res.status(400).json({ error: 'Evento no enviado' });
-
-    let payloadEvento;
-    try { payloadEvento = JSON.parse(eventoRaw); } catch (e) { return res.status(400).json({ error: 'evento JSON inválido' }); }
-
-    const tipoAval = req.body.tipoAval;
-    if (!tipoAval) return res.status(400).json({ error: 'tipoAval requerido' });
-
-    let organizaciones = [];
-    if (req.body.organizaciones) {
-      try { organizaciones = JSON.parse(req.body.organizaciones); } catch (e) { return res.status(400).json({ error: 'organizaciones JSON inválido' }); }
-    }
-
-    // build files map
-    const avalFile = (filesDict['avalPdf'] && filesDict['avalPdf'][0]) || null;
-    const certGeneral = (filesDict['certificadoParticipacion'] && filesDict['certificadoParticipacion'][0]) || null;
-    const orgFiles = {};
-    for (const key of Object.keys(filesDict)) {
-      if (key.startsWith('certificado_org_')) {
-        const id = key.slice('certificado_org_'.length);
-        orgFiles[id] = filesDict[key][0];
-      }
-    }
+    const payloadEvento = parseJSONSafe(eventoRaw);
+    if (!payloadEvento) return res.status(400).json({ error: 'evento JSON inválido' });
 
     const uploaderId = req.user?.id || payloadEvento.idUsuario || null;
     if (!uploaderId) return res.status(401).json({ error: 'Usuario no identificado' });
 
-    const created = await svc.createEventWithOrgs({
+    // Minimal create: frontend currently doesn't use organizaciones/aval here
+    const created = await svc.createEvent({
       evento: payloadEvento,
-      tipoAval,
-      uploaderId,
-      organizaciones,
-      files: { avalFile, certGeneral, orgFiles }
+      uploaderId
     });
 
-    res.status(201).json(created);
+    return res.status(201).json(created);
   } catch (err) {
     console.error('events.controller.create error:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Error creando evento' });
+    return res.status(err.status || 500).json({ error: err.message || 'Error creando evento' });
   }
 }
 
+/* PUT /api/events/:id
+   - If request is state-only (e.g., { estado: 'enRevision' }), delegate to updateEventState
+   - Otherwise delegate to updateEvent (partial update)
+*/
 export async function update(req, res) {
   try {
-    const filesDict = mapFilesArrayToDict(req.files || []);
-    const payloadEvento = req.body.evento ? JSON.parse(req.body.evento) : {};
-    const tipoAval = req.body.tipoAval || null;
+    // detect state-only
+    const bodyKeys = Object.keys(req.body || {});
+    const isStateOnly = (bodyKeys.length === 1 && (req.body.estado !== undefined || req.body.estado !== null))
+      || (bodyKeys.length === 0 && req.query && req.query.estado);
 
-    let organizaciones = [];
-    if (req.body.organizaciones) {
-      try { organizaciones = JSON.parse(req.body.organizaciones); } catch (e) { return res.status(400).json({ error: 'organizaciones JSON inválido' }); }
+    if (isStateOnly) {
+      const nuevoEstado = req.body.estado || req.query.estado;
+      const requesterId = req.user?.id || req.body.requesterId || null;
+      const updated = await svc.updateEventState({ id: req.params.id, nuevoEstado, requesterId });
+      return res.json(updated);
     }
 
-    const avalFile = (filesDict['avalPdf'] && filesDict['avalPdf'][0]) || null;
-    const certGeneral = (filesDict['certificadoParticipacion'] && filesDict['certificadoParticipacion'][0]) || null;
-    const orgFiles = {};
-    for (const key of Object.keys(filesDict)) {
-      if (key.startsWith('certificado_org_')) {
-        const id = key.slice('certificado_org_'.length);
-        orgFiles[id] = filesDict[key][0];
-      }
+    // parse incoming JSON body (or body.evento if multipart)
+    let payloadEvento = null;
+    if (req.body.evento) payloadEvento = parseJSONSafe(req.body.evento);
+    else if (Object.keys(req.body || {}).length > 0) payloadEvento = req.body;
+    else payloadEvento = {};
+
+    // only accept simple-update if payload contains at least one of the allowed keys
+    const allowed = new Set(['nombre','fecha','hora','horaFin']);
+    const keys = Object.keys(payloadEvento);
+    const simpleKeys = keys.filter(k => allowed.has(k));
+
+    if (simpleKeys.length === 0) {
+      // no simple keys provided — treat as bad request
+      return res.status(400).json({ error: 'Solo se permiten actualizaciones de nombre, fecha, hora y horaFin en este flujo' });
     }
 
-    // merge delete flags for org certificates (delete_cert_org_<id>) into organizaciones array items
-    const mergedOrgs = (organizaciones || []).map(o => ({ ...o }));
-    for (const k of Object.keys(req.body || {})) {
-      if (k.startsWith('delete_cert_org_')) {
-        const id = k.slice('delete_cert_org_'.length);
-        const v = req.body[k];
-        const truthy = (v === '1' || v === 'true' || v === 1 || v === true);
-        const found = mergedOrgs.find(x => String(x.idOrganizacion) === String(id));
-        if (found) {
-          found.deleteCertBeforeUpload = truthy;
-        } else {
-          mergedOrgs.push({ idOrganizacion: id, representanteLegal: 'no', participante: null, deleteCertBeforeUpload: truthy });
-        }
-      }
-    }
+    const partial = {};
+    for (const k of simpleKeys) partial[k] = payloadEvento[k];
 
-    // detect delete_aval flag (sent as delete_aval = '1' when user wants to remove existing aval without uploading new one)
-    const deleteAvalFlagRaw = req.body.delete_aval || req.body.deleteAval || '0';
-    const deleteAval = (deleteAvalFlagRaw === '1' || deleteAvalFlagRaw === 'true' || deleteAvalFlagRaw === true);
+    const requesterId = req.user?.id || payloadEvento.idUsuario || null;
+    if (!requesterId) return res.status(401).json({ error: 'Usuario no identificado' });
 
-    const uploaderId = req.user?.id || payloadEvento.idUsuario || null;
-    if (!uploaderId) return res.status(401).json({ error: 'Usuario no identificado' });
-
-    const updated = await svc.updateEventWithOrgs({
-      id: req.params.id,
-      evento: payloadEvento,
-      tipoAval,
-      uploaderId,
-      organizaciones: mergedOrgs,
-      files: { avalFile, certGeneral, orgFiles },
-      deleteAval
-    });
-
-    res.json(updated);
+    const updated = await svc.updateEventSimpleFields({ id: req.params.id, partial, requesterId });
+    return res.json(updated);
   } catch (err) {
     console.error('events.controller.update error:', err);
-    res.status(err.status || 500).json({ error: err.message || 'Error actualizando evento' });
+    return res.status(err.status || 500).json({ error: err.message || 'Error actualizando evento' });
   }
 }
 
+/* DELETE /api/events/:id */
 export async function remove(req, res) {
   try {
-    const ok = await svc.deleteEvent(req.params.id);
-    if (!ok) return res.status(404).json({ error: 'Evento no encontrado' });
-    res.json({ success: true });
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ error: 'Id requerido' });
+
+    const ok = await svc.deleteEvent(id, { requesterId: req.user?.id });
+    if (!ok) return res.status(404).json({ error: 'Evento no encontrado o no permitido' });
+    return res.json({ success: true });
   } catch (err) {
     console.error('events.controller.remove error:', err);
-    res.status(500).json({ error: 'Error eliminando evento' });
+    return res.status(500).json({ error: 'Error eliminando evento' });
   }
 }
