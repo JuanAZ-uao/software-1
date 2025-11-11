@@ -19,27 +19,17 @@ router.get('/:id/details', ctrl.getByIdDetailed);
 router.get('/:id', ctrl.getById);
 router.get('/:id/instalaciones', eventInstCtrl.getByEvent); // opcional
 
-router.post('/', (req, res, next) => {
-  uploadAny(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message });
-    next();
-  });
+// Usar uploadAny directamente como middleware; multer poblará req.files y req.body
+router.post('/', uploadAny, (req, res, next) => {
+  // Si multer produjo un error, normalmente se pasa como err al middleware de express.
+  // Aquí no hacemos nada extra: si llegamos aquí, multer ya procesó.
+  next();
 }, ctrl.create);
 
 // Endpoint para evaluar eventos (aprobar/rechazar)
-router.post('/evaluate', (req, res, next) => {
-  uploadAny(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message });
-    next();
-  });
-}, ctrl.evaluateEvent);
+router.post('/evaluate', uploadAny, (req, res, next) => { next(); }, ctrl.evaluateEvent);
 
-router.put('/:id', (req, res, next) => {
-  uploadAny(req, res, (err) => {
-    if (err) return res.status(400).json({ error: err.message });
-    next();
-  });
-}, ctrl.update);
+router.put('/:id', uploadAny, (req, res, next) => { next(); }, ctrl.update);
 
 router.delete('/:id', ctrl.remove);
 

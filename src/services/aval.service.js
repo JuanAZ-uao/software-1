@@ -2,6 +2,7 @@
 import * as repo from '../repositories/aval.repository.js';
 import path from 'path';
 import fs from 'fs';
+import pool from '../db/pool.js';
 
 async function unlinkFileIfExistsPath(certPath) {
   try {
@@ -13,46 +14,82 @@ async function unlinkFileIfExistsPath(certPath) {
 
 /**
  * Crea o reemplaza el aval para un evento por un usuario.
- * - Si ya existe un registro (clave compuesta idUsuario+idEvento), elimina el archivo previo del FS si existía.
- * - Valida tipoAval y file.
- * - Realiza upsert en el repositorio y devuelve la fila resultante.
+ * - file es opcional: si no se envía, no se borra el archivo previo y se preserva avalPdf (gracias a COALESCE en repo.upsert).
+ * - Si se envía file, borra el archivo previo (si existía) y guarda la nueva ruta.
+ * - tipoAval es opcional; si se provee se valida su formato.
  *
- * params: { idUsuario, idEvento, file, tipoAval = null }, conn opcional (transacción)
+ * params: { idUsuario, idEvento, file = null, tipoAval = null }, conn opcional (transacción)
  */
-export async function createAval({ idUsuario, idEvento, file, tipoAval = null }, conn) {
-  if (!file) throw Object.assign(new Error('File requerido para aval'), { status: 400 });
-  if (!tipoAval || !['director_programa','director_docencia'].includes(tipoAval)) {
-    throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
-  }
+// opts: { principal: 0|1 }  (por defecto 0)
+/**
+ * params: { idUsuario, idEvento, file = null, tipoAval = null }, conn opcional, opts: { principal, forceAvalPdf }
+ */
+export async function createAval({ idUsuario, idEvento, file = null, tipoAval = null }, conn, opts = {}) {
   if (!idUsuario) throw Object.assign(new Error('idUsuario requerido'), { status: 400 });
   if (!idEvento) throw Object.assign(new Error('idEvento requerido'), { status: 400 });
 
-  // normalizar ruta del nuevo archivo
-  const newPath = `/uploads/${file.filename}`;
+  const allowedTipos = ['director_programa','director_docencia'];
+  if (tipoAval && !allowedTipos.includes(tipoAval)) {
+    throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
+  }
 
-  // buscar si ya existe un aval para este idUsuario+idEvento
-  const existing = await repo.findByUserEvent(idUsuario, idEvento);
+  const connection = conn || pool;
 
-  // si existe y tiene avalPdf, borrar el archivo anterior del disco
+  // buscar existente dentro de la misma conexión
+  const existing = await repo.findByUserEvent(idUsuario, idEvento, connection);
+
+  let avalPdf = null;
+  if (file && file.filename) {
+    // nuevo archivo: borrar anterior si existía
+    if (existing && existing.avalPdf) {
+      await unlinkFileIfExistsPath(existing.avalPdf).catch(()=>{});
+    }
+    avalPdf = `/uploads/${file.filename}`;
+  } else if (opts && opts.forceAvalPdf) {
+    // forzar la ruta provista (por ejemplo la del uploader)
+    avalPdf = opts.forceAvalPdf;
+  } else {
+    // no se envió archivo y no hay force: dejar null para que repo.upsert maneje (o repo puede convertir a '')
+    avalPdf = null;
+  }
+
+  // permitir pasar principal por opts; por defecto 0 (participante)
+  const principalFlag = (typeof opts.principal !== 'undefined') ? (opts.principal ? 1 : 0) : 0;
+
+  const record = {
+    idUsuario: Number(idUsuario),
+    idEvento: Number(idEvento),
+    avalPdf,
+    principal: principalFlag,
+    tipoAval: tipoAval ?? null
+  };
+
+  // upsert: repo.upsert debe aceptar connection y manejar null/'' según esquema
+  const upserted = await repo.upsert(record, connection);
+  return upserted;
+}
+
+/**
+ * Elimina un aval (fila) y borra archivo físico si existía.
+ * params: { idEvento, idUsuario }, conn opcional
+ */
+export async function deleteAval({ idEvento, idUsuario }, conn) {
+  if (!idEvento) throw Object.assign(new Error('idEvento requerido'), { status: 400 });
+  if (!idUsuario) throw Object.assign(new Error('idUsuario requerido'), { status: 400 });
+
+  const connection = conn || pool;
+
+  const existing = await repo.findByUserEvent(idUsuario, idEvento, connection);
   if (existing && existing.avalPdf) {
     await unlinkFileIfExistsPath(existing.avalPdf).catch(()=>{});
   }
 
-  // preparar record y llamar al repo.upsert
-  const record = {
-    idUsuario,
-    idEvento,
-    avalPdf: newPath,
-    principal: 1,
-    tipoAval
-  };
-
-  const upserted = await repo.upsert(record, conn);
-  return upserted;
+  const affected = await repo.deleteAval(idEvento, idUsuario, connection);
+  return affected;
 }
 
-export async function findByEvent(idEvento) {
-  return await repo.findByEvent(idEvento);
+export async function findByEvent(idEvento, conn) {
+  return await repo.findByEvent(idEvento, conn);
 }
 
 /**
@@ -62,15 +99,12 @@ export async function findByEvent(idEvento) {
 export async function updateTipo({ idEvento, tipoAval }, conn) {
   const connection = conn || pool;
 
-  // Asegura que tipoAval sea válido en caller; aquí no revalidamos exhaustivamente.
-  // Intentar actualizar primero
   const [res] = await connection.query('UPDATE aval SET tipoAval = ? WHERE idEvento = ? AND principal = 1', [tipoAval, idEvento]);
   if (res.affectedRows > 0) {
     const [rows] = await connection.query('SELECT * FROM aval WHERE idEvento = ? AND principal = 1 LIMIT 1', [idEvento]);
     return rows[0] || null;
   }
 
-  // Si no existía, insertar una fila mínima (sin archivo) y marcar principal
   const insertSql = 'INSERT INTO aval (idEvento, avalPdf, tipoAval, principal, creadoEn) VALUES (?, NULL, ?, 1, NOW())';
   await connection.query(insertSql, [idEvento, tipoAval]);
   const [rows2] = await connection.query('SELECT * FROM aval WHERE idEvento = ? AND principal = 1 LIMIT 1', [idEvento]);

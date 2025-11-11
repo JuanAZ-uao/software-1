@@ -16,18 +16,21 @@ const storage = multer.diskStorage({
 });
 
 function fileFilter(req, file, cb) {
-  if (!file.mimetype || !file.mimetype.includes('pdf')) {
+  // Aceptar solo PDFs por mimetype o extensión
+  const mimetypeOk = file.mimetype && file.mimetype.toLowerCase().includes('pdf');
+  const extOk = path.extname(file.originalname || '').toLowerCase() === '.pdf';
+  if (!mimetypeOk && !extOk) {
+    // Error manejable por el middleware global de errores
     return cb(new Error('Only PDF allowed'), false);
   }
   cb(null, true);
 }
 
-// Accept dynamic field names (certificado_org_<id>), plus avalPdf and certificadoParticipacion.
-// Limit files for safety.
+// Ajusta fileSize al límite que quieras aceptar (coincidir con validación cliente)
 export const uploadAny = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024, files: 20 } // 10MB max per file, up to 20 files
+  limits: { fileSize: 20 * 1024 * 1024, files: 20 } // 20MB por archivo, hasta 20 archivos
 }).any();
 
 export const UPLOAD_DIR_PATH = UPLOAD_DIR;

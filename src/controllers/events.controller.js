@@ -66,7 +66,10 @@ export async function getById(req, res) {
 
 export async function create(req, res) {
   try {
+    // archivos procesados por multer
     const filesDict = mapFilesArrayToDict(req.files || []);
+
+    // evento viene como JSON string en campo 'evento'
     const eventoRaw = req.body.evento;
     if (!eventoRaw) return res.status(400).json({ error: 'Evento no enviado' });
 
@@ -78,14 +81,39 @@ export async function create(req, res) {
       return res.status(400).json({ error: 'Evento JSON inválido' });
     }
 
+    // tipoAval obligatorio
     const tipoAval = req.body.tipoAval;
     if (!tipoAval) return res.status(400).json({ error: 'tipoAval requerido' });
 
+    // organizaciones opcionales (JSON)
     let organizaciones = [];
     if (req.body.organizaciones) {
-      try { organizaciones = JSON.parse(req.body.organizaciones); } catch (e) { return res.status(400).json({ error: 'organizaciones JSON inválido' }); }
+      try { organizaciones = JSON.parse(req.body.organizaciones); } catch (e) {
+        console.error('events.controller.create: organizaciones JSON inválido', e);
+        return res.status(400).json({ error: 'organizaciones JSON inválido' });
+      }
     }
 
+    // parsear avales si vienen (vienen como JSON string desde FormData)
+    let avales = [];
+    if (req.body.avales) {
+      try {
+        const parsed = JSON.parse(req.body.avales);
+        if (Array.isArray(parsed)) {
+          // normalizar: cada item debe tener userId numérico
+          avales = parsed
+            .map(a => ({ userId: Number(a.userId) }))
+            .filter(a => Number.isFinite(a.userId));
+        } else {
+          console.warn('events.controller.create: avales no es array', parsed);
+        }
+      } catch (e) {
+        console.error('events.controller.create: avales JSON inválido', e);
+        return res.status(400).json({ error: 'avales JSON inválido' });
+      }
+    }
+
+    // archivos
     const avalFile = (filesDict['avalPdf'] && filesDict['avalPdf'][0]) || null;
     const certGeneral = (filesDict['certificadoParticipacion'] && filesDict['certificadoParticipacion'][0]) || null;
     const orgFiles = {};
@@ -98,11 +126,25 @@ export async function create(req, res) {
 
     const uploaderId = req.user?.id || payloadEvento.idUsuario || null;
 
+    // debug logs para confirmar lo que llega
+    console.log('events.controller.create payloadEvento:', payloadEvento);
+    console.log('events.controller.create tipoAval:', tipoAval);
+    console.log('events.controller.create uploaderId:', uploaderId);
+    console.log('events.controller.create organizaciones:', organizaciones);
+    console.log('events.controller.create avales parsed:', avales);
+    console.log('events.controller.create files present:', {
+      avalFile: !!avalFile,
+      certGeneral: !!certGeneral,
+      orgFilesCount: Object.keys(orgFiles).length
+    });
+
+    // pasar avales al servicio para que inserte las filas correspondientes
     const created = await svc.createEventWithOrgs({
       evento: payloadEvento,
       tipoAval,
       uploaderId,
       organizaciones,
+      avales, // <-- nuevo: array [{ userId: 3 }, { userId: 2 }, ...]
       files: { avalFile, certGeneral, orgFiles }
     });
 
@@ -175,15 +217,12 @@ export async function remove(req, res) {
     res.status(500).json({ error: 'Error eliminando evento' });
   }
 }
+
 export async function sendEvent(req, res) {
   try {
     const id = req.params.id;
-
-    // No authentication/authorization here by design:
-    // simplemente delegamos al servicio para cambiar estado si procede.
     const updated = await svc.sendEventForReview({ idEvento: id });
     if (!updated) return res.status(404).json({ error: 'Evento no encontrado' });
-
     res.json(updated);
   } catch (err) {
     console.error('events.controller.sendEvent error:', err);
