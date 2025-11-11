@@ -14,14 +14,6 @@ async function unlinkFileIfExistsPath(certPath) {
 
 /**
  * Crea o reemplaza el aval para un evento por un usuario.
- * - file es opcional: si no se envía, no se borra el archivo previo y se preserva avalPdf (gracias a COALESCE en repo.upsert).
- * - Si se envía file, borra el archivo previo (si existía) y guarda la nueva ruta.
- * - tipoAval es opcional; si se provee se valida su formato.
- *
- * params: { idUsuario, idEvento, file = null, tipoAval = null }, conn opcional (transacción)
- */
-// opts: { principal: 0|1 }  (por defecto 0)
-/**
  * params: { idUsuario, idEvento, file = null, tipoAval = null }, conn opcional, opts: { principal, forceAvalPdf }
  */
 export async function createAval({ idUsuario, idEvento, file = null, tipoAval = null }, conn, opts = {}) {
@@ -33,39 +25,78 @@ export async function createAval({ idUsuario, idEvento, file = null, tipoAval = 
     throw Object.assign(new Error('tipoAval inválido'), { status: 400 });
   }
 
+  let tipoAvalNormalized = (typeof tipoAval !== 'undefined' && tipoAval !== null) ? tipoAval : '';
+
   const connection = conn || pool;
 
   // buscar existente dentro de la misma conexión
   const existing = await repo.findByUserEvent(idUsuario, idEvento, connection);
 
+  // opts
+  const forcePdf = opts?.forceAvalPdf ?? null;
+  const principalFlag = (typeof opts.principal !== 'undefined') ? (opts.principal ? 1 : 0) : 0;
+
+  // debug log (temporal)
+  console.log('[createAval] start', { idUsuario, idEvento, hasFile: !!file, fileFilename: file?.filename, forcePdf, tipoAvalNormalized, existingAvalPdf: existing?.avalPdf });
+
+  // resolver ruta del archivo de forma robusta
   let avalPdf = null;
-  if (file && file.filename) {
+  if (file && (file.filename || file.path)) {
     // nuevo archivo: borrar anterior si existía
     if (existing && existing.avalPdf) {
       await unlinkFileIfExistsPath(existing.avalPdf).catch(()=>{});
     }
-    avalPdf = `/uploads/${file.filename}`;
-  } else if (opts && opts.forceAvalPdf) {
+    if (file.filename) {
+      avalPdf = `/uploads/${file.filename}`;
+    } else {
+      const p = file.path || '';
+      if (p) {
+        const idx = p.indexOf('uploads');
+        if (idx >= 0) avalPdf = p.substring(idx).startsWith('/') ? p.substring(idx) : '/' + p.substring(idx);
+        else avalPdf = `/uploads/${path.basename(p)}`;
+      } else {
+        avalPdf = null;
+      }
+    }
+  } else if (forcePdf) {
     // forzar la ruta provista (por ejemplo la del uploader)
-    avalPdf = opts.forceAvalPdf;
+    avalPdf = forcePdf;
   } else {
-    // no se envió archivo y no hay force: dejar null para que repo.upsert maneje (o repo puede convertir a '')
-    avalPdf = null;
+    // no se envió archivo y no hay force:
+    // - si existe fila previa y tiene avalPdf, dejar null para preservar (repo.upsert lo manejará)
+    // - si no existe fila previa o no tiene avalPdf, intentar reutilizar la ruta del principal del evento
+    if (existing && existing.avalPdf) {
+      avalPdf = null; // preserve existing via upsert
+    } else {
+      // buscar fila principal del evento
+      const all = await repo.findByEvent(idEvento, connection);
+      const principalRow = (all || []).find(r => Number(r.principal) === 1);
+      if (principalRow && principalRow.avalPdf) {
+        avalPdf = principalRow.avalPdf;
+        if (!tipoAvalNormalized && principalRow.tipoAval) tipoAvalNormalized = principalRow.tipoAval;
+        console.log('[createAval] using principal fallback', { principalAvalPdf: avalPdf, principalTipoAval: principalRow.tipoAval });
+      } else {
+        avalPdf = null;
+      }
+    }
   }
-
-  // permitir pasar principal por opts; por defecto 0 (participante)
-  const principalFlag = (typeof opts.principal !== 'undefined') ? (opts.principal ? 1 : 0) : 0;
 
   const record = {
     idUsuario: Number(idUsuario),
     idEvento: Number(idEvento),
     avalPdf,
     principal: principalFlag,
-    tipoAval: tipoAval ?? null
+    tipoAval: tipoAvalNormalized
   };
 
-  // upsert: repo.upsert debe aceptar connection y manejar null/'' según esquema
+  // debug log antes de upsert
+  console.log('[createAval] upsert record', { idUsuario: record.idUsuario, idEvento: record.idEvento, avalPdf: record.avalPdf, principal: record.principal, tipoAval: record.tipoAval });
+
   const upserted = await repo.upsert(record, connection);
+
+  // debug log resultado
+  console.log('[createAval] upserted', upserted && { idUsuario: upserted.idUsuario, idEvento: upserted.idEvento, avalPdf: upserted.avalPdf, principal: upserted.principal, tipoAval: upserted.tipoAval });
+
   return upserted;
 }
 
@@ -92,21 +123,19 @@ export async function findByEvent(idEvento, conn) {
   return await repo.findByEvent(idEvento, conn);
 }
 
-/**
- * Actualiza el tipoAval de la fila principal (principal = 1) para un evento.
- * Si no existe una fila principal, inserta una nueva fila mínima (sin archivo) y la marca principal.
- */
 export async function updateTipo({ idEvento, tipoAval }, conn) {
   const connection = conn || pool;
 
-  const [res] = await connection.query('UPDATE aval SET tipoAval = ? WHERE idEvento = ? AND principal = 1', [tipoAval, idEvento]);
+  const tipoAvalNormalized = (typeof tipoAval !== 'undefined' && tipoAval !== null) ? tipoAval : '';
+
+  const [res] = await connection.query('UPDATE aval SET tipoAval = ? WHERE idEvento = ? AND principal = 1', [tipoAvalNormalized, idEvento]);
   if (res.affectedRows > 0) {
     const [rows] = await connection.query('SELECT * FROM aval WHERE idEvento = ? AND principal = 1 LIMIT 1', [idEvento]);
     return rows[0] || null;
   }
 
-  const insertSql = 'INSERT INTO aval (idEvento, avalPdf, tipoAval, principal, creadoEn) VALUES (?, NULL, ?, 1, NOW())';
-  await connection.query(insertSql, [idEvento, tipoAval]);
+  const insertSql = 'INSERT INTO aval (idEvento, avalPdf, tipoAval, principal, creadoEn) VALUES (?, ?, ?, 1, NOW())';
+  await connection.query(insertSql, [idEvento, '', tipoAvalNormalized]);
   const [rows2] = await connection.query('SELECT * FROM aval WHERE idEvento = ? AND principal = 1 LIMIT 1', [idEvento]);
   return rows2[0] || null;
 }

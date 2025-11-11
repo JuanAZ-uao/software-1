@@ -1,4 +1,4 @@
-// components/myEvents.js
+// src/components/myEvents.js
 import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
 import { toast } from '../utils/helpers.js';
@@ -20,6 +20,42 @@ function toDateInputValue(raw) {
     return `${year}-${mm}-${dd}`;
   } catch { return ''; }
 }
+
+/* ---------- util: normalizar usuarios, estilos y debounce ---------- */
+
+function normalizeUsers(rawUsers = []) {
+  return (rawUsers || []).map(u => {
+    const id = u?.id ?? u?.idUsuario ?? u?.idUser ?? u?.userId ?? null;
+    return {
+      id: id != null ? String(id) : '',
+      nombre: u?.nombre ?? u?.firstName ?? '',
+      apellidos: u?.apellidos ?? u?.lastName ?? '',
+      email: u?.email ?? '',
+      isSecretaria: Boolean(u?.isSecretaria === 1 || u?.isSecretaria === true || u?.is_secretaria === 1 || u?.is_secretaria === true)
+    };
+  }).filter(x => x.id);
+}
+
+function ensureParticipantStyles() {
+  if (document.getElementById('participants-list-styles')) return;
+  const css = `
+    #editParticipantsList .participant-item { display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid #f3f3f3; transition: opacity .18s, height .18s, margin .18s; }
+    #editParticipantsList .participant-item.hidden { opacity:0; height:0; margin:0; padding:0 8px; overflow:hidden; border:none; }
+    #editParticipantsList .participant-item .participant-label { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #editParticipantFilter { margin-bottom:8px; }
+  `;
+  const s = document.createElement('style');
+  s.id = 'participants-list-styles';
+  s.appendChild(document.createTextNode(css));
+  document.head.appendChild(s);
+}
+
+function debounce(fn, wait = 180) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+}
+
+/* ---------- render / modal ---------- */
 
 export function renderMyEvents() {
   const user = getCurrentUser();
@@ -116,6 +152,14 @@ export function renderMyEvents() {
               <div style="margin-top:8px;">
                 <label style="cursor:pointer;"><input type="checkbox" id="editInstSelectAll" /> Seleccionar/Deseleccionar todas</label>
               </div>
+            </div>
+
+            <!-- Organizadores adicionales -->
+            <div>
+              <label class="label">Organizadores adicionales</label>
+              <input id="editParticipantFilter" class="input" placeholder="Buscar por nombre o email" style="margin-bottom:6px;" />
+              <div id="editParticipantsList" style="max-height:160px; overflow:auto; border:1px solid #ddd; padding:6px;"></div>
+              <small class="muted">No seleccione usuarias marcadas como "Secretaría"</small>
             </div>
 
             <div>
@@ -273,6 +317,22 @@ export function bindMyEventsListeners() {
       });
       return;
     }
+    if (e.target?.id === 'editParticipantFilter') {
+      // debounce + attribute-based filtering to preserve layout
+      if (!window.__editParticipantFilterDebounced) {
+        window.__editParticipantFilterDebounced = debounce((q) => {
+          const ql = (q || '').toLowerCase().trim();
+          document.querySelectorAll('#editParticipantsList .participant-item').forEach(lbl => {
+            const name = lbl.getAttribute('data-name') || '';
+            const email = lbl.getAttribute('data-email') || '';
+            const match = !ql || name.includes(ql) || email.includes(ql);
+            if (match) lbl.classList.remove('hidden'); else lbl.classList.add('hidden');
+          });
+        }, 160);
+      }
+      window.__editParticipantFilterDebounced(e.target.value || '');
+      return;
+    }
   });
 
   document.addEventListener('submit', async (e) => {
@@ -283,6 +343,7 @@ export function bindMyEventsListeners() {
 }
 
 /* ---------- helper UI functions ---------- */
+
 function buildInstListHtml(installations, selectedIds) {
   return (installations || []).map(i => {
     const iid = i.idInstalacion || i.id;
@@ -290,6 +351,24 @@ function buildInstListHtml(installations, selectedIds) {
     const checked = (selectedIds || []).some(x => String(x) === String(iid));
     const cap = i.capacidad != null ? i.capacidad : 0;
     return `<div style="padding:4px 0;"><label><input type="checkbox" class="inst-checkbox" name="instalaciones" value="${escapeHtml(iid)}" ${checked ? 'checked' : ''}> ${label} — cap: ${escapeHtml(cap)}</label></div>`;
+  }).join('');
+}
+
+function buildParticipantsListHtml(users, selectedIds = [], creatorId) {
+  const selectedSet = new Set((selectedIds || []).map(String));
+  ensureParticipantStyles();
+  return (users || []).filter(u => String(u.id ?? u.idUsuario ?? '') !== String(creatorId)).map(u => {
+    const id = String(u.id ?? u.idUsuario ?? '');
+    const name = `${u.nombre || ''} ${u.apellidos || ''}`.trim();
+    const email = u.email || '';
+    const isSec = u.isSecretaria === true || u.isSecretaria === 1;
+    const checked = selectedSet.has(String(id));
+    const dataName = escapeHtml((name || '').toLowerCase());
+    const dataEmail = escapeHtml((email || '').toLowerCase());
+    return `<label class="participant-item" data-name="${dataName}" data-email="${dataEmail}">
+      <input type="checkbox" class="participant-checkbox" value="${escapeHtml(id)}" ${checked ? 'checked' : ''} ${isSec ? 'disabled' : ''} />
+      <span class="participant-label">${escapeHtml(name)}${email ? ` — ${escapeHtml(email)}` : ''}${isSec ? ' (Secretaria)' : ''}</span>
+    </label>`;
   }).join('');
 }
 
@@ -315,6 +394,7 @@ function updateInstCapacitySummary() {
 }
 
 /* ---------- open modal and preload data ---------- */
+
 async function openEventEditModal(id) {
   try {
     const rEvt = await fetch(`/api/events/${id}`);
@@ -322,19 +402,35 @@ async function openEventEditModal(id) {
     const evento = await rEvt.json();
     if (!rEvt.ok || !evento) { toast('No se pudo cargar el evento', 'error'); return; }
 
-    // ensure installations in state (always fetch fresh here to guarantee up-to-date capacities)
+    // Solo el organizador principal puede editar
+    const currentUser = getCurrentUser();
+    if (!currentUser || String(currentUser.id) !== String(evento.idUsuario)) {
+      toast('No autorizado para editar este evento', 'error');
+      return;
+    }
+
+    // ensure installations in state
     try {
       const rInst = await fetch('/api/installations');
       const instList = await rInst.json();
       setState({ ...getState(), installations: instList || [] });
-    } catch (e) {
-      // keep whatever is in state if fetch fails
-    }
+    } catch (e) { /* noop */ }
 
-    // ensure organizations in state (keep existing behavior)
+    // ensure organizations in state
     const st = getState();
     if (!Array.isArray(st.organizations) || st.organizations.length === 0) {
       try { const rOrg = await fetch('/api/organizations'); setState({ ...getState(), organizations: await rOrg.json() || [] }); } catch { /* noop */ }
+    }
+
+    // ensure users in state for participants list (normalize)
+    const stUsers = Array.isArray(getState().users) ? getState().users : [];
+    if (!stUsers.length) {
+      try {
+        const ru = await fetch('/api/usuarios?q=&page=1&limit=1000');
+        const usersRaw = await ru.json();
+        const normalized = normalizeUsers(Array.isArray(usersRaw) ? usersRaw : (usersRaw.usuarios || usersRaw.users || usersRaw.data || []));
+        setState({ ...getState(), users: normalized });
+      } catch (e) { /* noop */ }
     }
 
     const rAssoc = await fetch(`/api/organization-event/event/${id}`);
@@ -344,7 +440,8 @@ async function openEventEditModal(id) {
     const form = document.getElementById('eventEditForm');
     const instList = document.getElementById('editInstList');
     const orgList = document.getElementById('editOrgList');
-    if (!modal || !form || !instList || !orgList) { toast('Modal o formulario no está disponible', 'error'); return; }
+    const participantsListEl = document.getElementById('editParticipantsList');
+    if (!modal || !form || !instList || !orgList || !participantsListEl) { toast('Modal o formulario no está disponible', 'error'); return; }
 
     const setIf = (selector, value) => { const el = form.querySelector(selector); if (el) el.value = value ?? ''; };
     setIf('[name="idEvento"]', evento.idEvento || evento.id || '');
@@ -356,7 +453,7 @@ async function openEventEditModal(id) {
     setIf('[name="horaFin"]', evento.horaFin || '');
     setIf('[name="capacidad"]', evento.capacidad != null ? String(evento.capacidad) : '');
 
-    // instalaciones: prefer evento.instalacionesIds (array) else evento.instalaciones (objects or ids)
+    // instalaciones
     const instalacionIds = Array.isArray(evento.instalacionesIds) && evento.instalacionesIds.length
       ? evento.instalacionesIds.map(String)
       : (Array.isArray(evento.instalaciones) ? evento.instalaciones.map(i => String(i.idInstalacion || i)) : []);
@@ -436,6 +533,17 @@ async function openEventEditModal(id) {
       `;
     }).join('') : '<div class="muted">No hay organizaciones registradas</div>';
 
+    // PARTICIPANTS: preselect based on evento.avales or evento.participantes (robusto)
+    let participants = [];
+    if (Array.isArray(evento.avales) && evento.avales.length) {
+      participants = evento.avales.map(a => String(a.idUsuario ?? a.userId ?? a.id ?? a.usuarioId ?? a));
+    } else if (Array.isArray(evento.participantes) && evento.participantes.length) {
+      participants = evento.participantes.map(p => String(p.idUsuario ?? p.id ?? p));
+    }
+
+    const usersList = Array.isArray(getState().users) ? getState().users : [];
+    participantsListEl.innerHTML = buildParticipantsListHtml(usersList, participants, evento.idUsuario);
+
     // AVAL block population
     const avalWrap = document.getElementById('avalExistingWrap');
     const avalDeleteWrap = document.getElementById('avalDeleteWrap');
@@ -492,6 +600,7 @@ async function openEventEditModal(id) {
 }
 
 /* ---------- submit edited event ---------- */
+
 async function submitEditedEvent(form) {
   const submitBtn = document.getElementById('evtEditSubmitBtn');
   if (_isSubmittingEdit) { toast('Enviando... espera', 'info'); return; }
@@ -516,7 +625,7 @@ async function submitEditedEvent(form) {
     const instalacionesIds = instalacionCheckboxes.filter(cb => cb.checked).map(cb => cb.value).filter(Boolean);
     if (!instalacionesIds.length) { toast('Seleccione al menos una instalación', 'error'); throw new Error('validation'); }
 
-    // client-side capacity validation using current state installations (freshly fetched when modal opened)
+    // client-side capacity validation
     const capacidadRaw = fd.get('capacidad');
     const capacidadNum = capacidadRaw ? Number(capacidadRaw) : null;
     if (!Number.isFinite(capacidadNum) || capacidadNum <= 0) { toast('Capacidad debe ser número > 0', 'error'); throw new Error('validation'); }
@@ -567,6 +676,12 @@ async function submitEditedEvent(form) {
       }
     }
 
+    // PARTICIPANTS: recoger organizadores adicionales seleccionados (excluir creador)
+    const selectedParticipants = Array.from(form.querySelectorAll('#editParticipantsList input.participant-checkbox:checked'))
+      .map(cb => Number(cb.value))
+      .filter(Boolean);
+
+    // construir FormData para PUT
     const sendForm = new FormData();
     const payloadEvento = {
       idUsuario: fd.get('idUsuario') || getCurrentUser()?.id,
@@ -582,6 +697,14 @@ async function submitEditedEvent(form) {
     sendForm.append('evento', JSON.stringify(payloadEvento));
     sendForm.append('organizaciones', JSON.stringify(organizacionesPayload));
     sendForm.append('instalaciones', JSON.stringify(payloadEvento.instalaciones));
+
+    // adjuntar avales (organizadores adicionales)
+    if (Array.isArray(selectedParticipants) && selectedParticipants.length > 0) {
+      const avalesPayload = selectedParticipants.map(id => ({ userId: Number(id) }));
+      sendForm.append('avales', JSON.stringify(avalesPayload));
+    } else {
+      sendForm.append('avales', JSON.stringify([]));
+    }
 
     const deleteAvalVal = fd.get('delete_aval') || '0';
     if (deleteAvalVal === '1') sendForm.append('delete_aval', '1');
@@ -625,11 +748,10 @@ async function submitEditedEvent(form) {
     const modal = document.getElementById('eventEditModal');
     if (modal) modal.style.display = 'none';
   } catch (err) {
-    if (err.message !== 'validation') console.error('Error actualizando evento:', err);
+    if (err.message !== 'validation') console.error('submitEditedEvent error:', err);
+    toast(err.message || 'Error actualizando evento', 'error');
   } finally {
     _isSubmittingEdit = false;
     if (submitBtn) submitBtn.disabled = false;
   }
 }
-
-export { openEventEditModal };

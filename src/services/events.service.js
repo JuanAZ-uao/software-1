@@ -5,42 +5,12 @@ import * as instRepo from '../repositories/installations.repository.js';
 import * as avalService from './aval.service.js';
 import * as instEventSvc from './eventInstallation.service.js';
 import * as orgEventRepo from '../repositories/organizationEvent.repository.js';
-import * as eventsRepo from '../repositories/events.repository.js'; // NUEVO
+import * as eventsRepo from '../repositories/events.repository.js';
 import * as avalRepo from '../repositories/aval.repository.js';
 import * as usuarioSvc from './usuario.service.js';
 import fs from 'fs';
 import path from 'path';
 
-
-export async function sendEventForReview({ idEvento }) {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-
-    const ev = await repo.findById(idEvento, conn);
-    if (!ev) {
-      await conn.rollback();
-      return null;
-    }
-
-    // Solo permitir la transición si el evento está en 'registrado'
-    if (String(ev.estado) !== 'registrado') {
-      await conn.rollback();
-      return ev;
-    }
-
-    // Actualizar estado a 'enRevision'
-    const updated = await repo.updateById(idEvento, { estado: 'enRevision' }, conn);
-
-    await conn.commit();
-    return updated;
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
-}
 function validateEvento(payload) {
   if (!payload) throw Object.assign(new Error('Payload evento requerido'), { status: 400 });
   if (!payload.nombre) throw Object.assign(new Error('Nombre requerido'), { status: 400 });
@@ -66,7 +36,6 @@ export async function getAllEvents() {
   return await repo.findAll();
 }
 
-
 export async function getEventById(id) {
   return await repo.findById(id);
 }
@@ -75,40 +44,62 @@ export async function deleteEvent(id) {
   return await repo.deleteById(id);
 }
 
-
 /**
  * createEventWithOrgs
+ *
+ * - Inserta evento
+ * - Crea/asegura aval del uploader (principal)
+ * - Crea/asegura avales para organizadores adicionales; si no suben archivo,
+ *   se reutiliza la ruta del aval del uploader y el tipo correspondiente.
+ * - No borra la fila del uploader.
  */
-// src/services/events.service.js (fragmento)
-// Ajusta imports: pool, repo (evento), orgEventRepo, avalService, usuarioSvc, instEventSvc
-
 export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organizaciones = [], files = {}, avales = [] }) {
-  // valida evento (tu validación existente)
   validateEvento(evento);
+  const tipoAvalNormalized = (typeof tipoAval !== 'undefined' && tipoAval !== null) ? tipoAval : '';
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    // 1) Insertar evento (repo.insert debe aceptar conn)
+    // 1) Insertar evento
     const created = await repo.insert(evento, conn);
     const idEvento = created.idEvento || created.id || created.insertId;
     if (!idEvento) throw Object.assign(new Error('No se pudo crear el evento'), { status: 500 });
 
-    // 2) Aval del uploader (si subió archivo) o solo tipoAval
+    // 2) Asegurar aval del uploader (principal)
+    // Si subió archivo, lo guardamos; si no, intentamos crear/actualizar la fila principal con tipoAval
     if (files?.avalFile) {
-      // crear/upsert aval del uploader como principal (1)
       await avalService.createAval(
-        { idUsuario: Number(uploaderId), idEvento, file: files.avalFile, tipoAval },
+        { idUsuario: Number(uploaderId), idEvento, file: files.avalFile, tipoAval: tipoAvalNormalized },
         conn,
         { principal: 1 }
       );
-    } else if (tipoAval) {
-      // actualizar tipo en la fila principal (si existe) o crearla
-      await avalService.updateTipo({ idEvento, tipoAval }, conn).catch(()=>{});
+    } else if (tipoAvalNormalized) {
+      await avalService.updateTipo({ idEvento, tipoAval: tipoAvalNormalized }, conn).catch(()=>{});
+    } else {
+      // intentar no fallar si no hay nada: crear fila principal mínima si no existe
+      const existingUploaderAval = uploaderId ? await avalRepo.findByUserEvent(Number(uploaderId), idEvento, conn) : null;
+      if (!existingUploaderAval && uploaderId) {
+        await avalService.createAval(
+          { idUsuario: uploaderId, idEvento, file: null, tipoAval: tipoAvalNormalized },
+          conn,
+          { principal: 1, forceAvalPdf: null }
+        );
+      }
     }
 
-    // 2.b) Vincular instalaciones si aplica
+    // Leer la fila del uploader para obtener la ruta real y tipo (si existe)
+    let uploaderAvalPdf = null;
+    let uploaderTipoAval = tipoAvalNormalized || '';
+    if (uploaderId) {
+      const uploaderAvalRow = await avalRepo.findByUserEvent(Number(uploaderId), idEvento, conn);
+      if (uploaderAvalRow) {
+        if (uploaderAvalRow.avalPdf) uploaderAvalPdf = uploaderAvalRow.avalPdf;
+        if (uploaderAvalRow.tipoAval) uploaderTipoAval = uploaderAvalRow.tipoAval;
+      }
+    }
+
+    // 3) Instalaciones
     if (Array.isArray(evento.instalaciones) && evento.instalaciones.length) {
       if (instEventSvc?.linkInstallationsToEvent) {
         await instEventSvc.linkInstallationsToEvent(idEvento, evento.instalaciones, conn);
@@ -117,7 +108,7 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
       }
     }
 
-    // 2.c) Organizaciones participantes
+    // 4) Organizaciones participantes
     if (Array.isArray(organizaciones) && organizaciones.length) {
       for (const org of organizaciones) {
         const orgId = org.idOrganizacion;
@@ -135,39 +126,37 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
       }
     }
 
-    // --- Obtener ruta del aval del uploader (si existe) para reutilizarla ---
-    let uploaderAvalPdf = null;
-    if (uploaderId) {
-      const uploaderAval = await avalRepo.findByUserEvent(Number(uploaderId), idEvento, conn);
-      if (uploaderAval && uploaderAval.avalPdf) uploaderAvalPdf = uploaderAval.avalPdf;
-    }
-
-    // 3) Procesar avales múltiples: crear/upsert una fila por cada userId recibido
-    const commonTipoAval = tipoAval || null;
+    // 5) Procesar avales múltiples: crear/upsert una fila por cada userId recibido
+    const commonTipoAval = tipoAvalNormalized;
+    // proteger siempre al uploader si se incluye en la lista o no
+    const incomingUserIds = new Set();
     if (Array.isArray(avales) && avales.length > 0) {
       for (const a of avales) {
         const rawUserId = a?.userId ?? a?.idUsuario ?? a;
         const userId = Number(rawUserId);
         if (!Number.isFinite(userId)) continue;
+        incomingUserIds.add(String(userId));
 
-        // Validar que el usuario no sea secretaria (si el servicio existe)
         if (usuarioSvc && typeof usuarioSvc.validarNoSecretaria === 'function') {
           await usuarioSvc.validarNoSecretaria(userId, conn);
         }
 
-        // archivo específico para este avalador (si se subió uno por usuario)
         const file = files?.avalFiles?.[String(userId)] || null;
 
-        // Si no hay archivo para este usuario y existe uploaderAvalPdf, forzamos esa ruta
+        // resolver tipoAval: item -> common -> uploader
+        const resolvedTipoAval = (typeof a?.tipoAval !== 'undefined' && a?.tipoAval !== null)
+          ? a.tipoAval
+          : (commonTipoAval || uploaderTipoAval || '');
+
+        // si no hay archivo del participante, forzar la ruta del uploader si existe
         const forcePdf = file ? null : (uploaderAvalPdf || null);
 
-        // Crear/upsert aval para este usuario; participantes adicionales no deben ser principal
         await avalService.createAval(
           {
             idUsuario: userId,
             idEvento,
             file,
-            tipoAval: a?.tipoAval ?? commonTipoAval
+            tipoAval: resolvedTipoAval
           },
           conn,
           { principal: 0, forceAvalPdf: forcePdf }
@@ -175,7 +164,13 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
       }
     }
 
-    // 4) Certificado general si existe
+    // Asegurar que el uploader esté protegido en la lista entrante
+    if (uploaderId) incomingUserIds.add(String(uploaderId));
+
+    // 6) No eliminar la fila del uploader; en create no hay filas previas que borrar salvo asociaciones previas
+    //    (si quieres limpiar filas antiguas, hazlo con cuidado; aquí no eliminamos nada en create)
+
+    // 7) Certificado general si existe
     if (files?.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
       if (repo.attachGeneralCertificate) {
@@ -187,7 +182,6 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
 
     await conn.commit();
 
-    // devolver el evento creado
     const result = await repo.findById(idEvento, conn);
     return result;
   } catch (err) {
@@ -199,21 +193,23 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
   }
 }
 
-
-
 /**
  * updateEventWithOrgs
+ *
+ * - Actualiza evento
+ * - Asegura fila principal del uploader
+ * - Upsertea avales adicionales reutilizando avalPdf/tipo del uploader cuando no suben archivo
+ * - No borra la fila principal ni filas con principal = 1
  */
-
-// src/services/events.service.js (fragmento)
-
 export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, organizaciones = [], files = {}, avales = [] }) {
   validateEvento(evento);
+  const tipoAvalNormalized = (typeof tipoAval !== 'undefined' && tipoAval !== null) ? tipoAval : '';
+
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    // 1) Actualizar evento (usa tu repo.updateById o equivalente)
+    // 1) Actualizar evento
     if (typeof repo.updateById === 'function') {
       await repo.updateById(id, evento, conn);
     } else if (typeof repo.update === 'function') {
@@ -228,14 +224,39 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       }
     }
 
-    // 2) Aval global
+    // 2) Asegurar/actualizar aval global del uploader (principal)
     if (files?.avalFile) {
-      await avalService.createAval({ idUsuario: uploaderId, idEvento: id, file: files.avalFile, tipoAval }, conn);
-    } else if (tipoAval) {
-      await avalService.updateTipo({ idEvento: id, tipoAval }, conn).catch(()=>{});
+      await avalService.createAval(
+        { idUsuario: uploaderId, idEvento: id, file: files.avalFile, tipoAval: tipoAvalNormalized },
+        conn,
+        { principal: 1 }
+      );
+    } else if (tipoAvalNormalized) {
+      await avalService.updateTipo({ idEvento: id, tipoAval: tipoAvalNormalized }, conn).catch(()=>{});
+    } else {
+      // si no hay tipo ni archivo, no forzamos nada; pero nos aseguramos de que exista la fila principal
+      const existingUploaderAval = uploaderId ? await avalRepo.findByUserEvent(Number(uploaderId), id, conn) : null;
+      if (!existingUploaderAval && uploaderId) {
+        await avalService.createAval(
+          { idUsuario: uploaderId, idEvento: id, file: null, tipoAval: tipoAvalNormalized },
+          conn,
+          { principal: 1, forceAvalPdf: null }
+        );
+      }
     }
 
-    // 3) Organizaciones e instalaciones (mantén tu lógica previa)
+    // Leer la fila del uploader para obtener la ruta real y tipo (si existe)
+    let uploaderAvalPdf = null;
+    let uploaderTipoAval = tipoAvalNormalized || '';
+    if (uploaderId) {
+      const uploaderAvalRow = await avalRepo.findByUserEvent(Number(uploaderId), id, conn);
+      if (uploaderAvalRow) {
+        if (uploaderAvalRow.avalPdf) uploaderAvalPdf = uploaderAvalRow.avalPdf;
+        if (uploaderAvalRow.tipoAval) uploaderTipoAval = uploaderAvalRow.tipoAval;
+      }
+    }
+
+    // 3) Instalaciones
     if (Array.isArray(evento.instalaciones) && evento.instalaciones.length) {
       if (instEventSvc?.linkInstallationsToEvent) {
         await instEventSvc.linkInstallationsToEvent(id, evento.instalaciones, conn);
@@ -244,37 +265,75 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       }
     }
 
-    for (const org of organizaciones) {
-      const orgId = org.idOrganizacion;
-      if (!orgId) throw Object.assign(new Error('idOrganizacion requerido'), { status: 400 });
-      const certFile = files?.orgFiles?.[orgId] || null;
-      const deleteCert = files?.deleteCerts?.[orgId];
-      if (certFile) {
-        const certPath = `/uploads/${certFile.filename}`;
-        await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: certPath }, conn);
-      } else if (deleteCert) {
-        await conn.query('UPDATE organizacion_evento SET certificadoParticipacion = NULL WHERE idOrganizacion = ? AND idEvento = ?', [orgId, id]);
-        await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: null }, conn);
-      } else {
-        const existing = typeof orgEventRepo.findById === 'function' ? await orgEventRepo.findById(orgId, id, conn) : null;
-        const currentCert = existing?.certificadoParticipacion ?? null;
-        await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: currentCert }, conn);
+    // 4) Organizaciones
+    if (Array.isArray(organizaciones) && organizaciones.length) {
+      for (const org of organizaciones) {
+        const orgId = org.idOrganizacion;
+        if (!orgId) throw Object.assign(new Error('idOrganizacion requerido'), { status: 400 });
+        const certFile = files?.orgFiles?.[orgId] || null;
+        const deleteCert = files?.deleteCerts?.[orgId];
+        if (certFile) {
+          const certPath = `/uploads/${certFile.filename}`;
+          await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: certPath }, conn);
+        } else if (deleteCert) {
+          await conn.query('UPDATE organizacion_evento SET certificadoParticipacion = NULL WHERE idOrganizacion = ? AND idEvento = ?', [orgId, id]);
+          await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: null }, conn);
+        } else {
+          const existing = typeof orgEventRepo.findById === 'function' ? await orgEventRepo.findById(orgId, id, conn) : null;
+          const currentCert = existing?.certificadoParticipacion ?? null;
+          await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: currentCert }, conn);
+        }
       }
     }
 
-    // 4) Avales: upsert de los enviados
-    const commonTipoAval = tipoAval || null;
+    // 5) Avales enviados: upsert (respetando uploader values)
+    const commonTipoAval = tipoAvalNormalized;
+    const incomingUserIds = new Set();
     if (Array.isArray(avales)) {
       for (const a of avales) {
-        const userId = a?.userId || a?.idUsuario || a;
-        if (!userId) continue;
-        await usuarioSvc.validarNoSecretaria(userId, conn);
+        const userIdRaw = a?.userId ?? a?.idUsuario ?? a;
+        const userId = Number(userIdRaw);
+        if (!Number.isFinite(userId)) continue;
+        incomingUserIds.add(String(userId));
+
+        if (usuarioSvc && typeof usuarioSvc.validarNoSecretaria === 'function') {
+          await usuarioSvc.validarNoSecretaria(userId, conn);
+        }
+
         const file = files?.avalFiles?.[String(userId)] || null;
-        await avalService.createAval({ idUsuario: userId, idEvento: id, file, tipoAval: a?.tipoAval || commonTipoAval }, conn);
+
+        const resolvedTipoAval = (typeof a?.tipoAval !== 'undefined' && a?.tipoAval !== null)
+          ? a.tipoAval
+          : (commonTipoAval || uploaderTipoAval || '');
+
+        const forcePdf = file ? null : (uploaderAvalPdf || null);
+
+        await avalService.createAval(
+          { idUsuario: userId, idEvento: id, file, tipoAval: resolvedTipoAval },
+          conn,
+          { principal: 0, forceAvalPdf: forcePdf }
+        );
       }
     }
 
-    // 5) Eliminar avales marcados
+    // proteger siempre al uploader (organizador principal) en la lista entrante
+    if (uploaderId) incomingUserIds.add(String(uploaderId));
+
+    // 6) Eliminar avales que ya no están en la lista incomingUserIds
+    // nunca borrar la fila principal ni al uploader
+    const existingAvalRows = await avalRepo.findByEvent(id, conn);
+    const toDelete = [];
+    for (const row of existingAvalRows || []) {
+      const uid = String(row.idUsuario);
+      if (String(uid) === String(uploaderId)) continue;
+      if (Number(row.principal) === 1) continue;
+      if (!incomingUserIds.has(String(uid))) toDelete.push(uid);
+    }
+    for (const uid of toDelete) {
+      await avalService.deleteAval({ idEvento: id, idUsuario: uid }, conn);
+    }
+
+    // 7) Eliminar avales marcados explícitamente si vienen en files.deleteAvalFlags
     const deleteAvalFlags = files?.deleteAvalFlags || {};
     for (const userId of Object.keys(deleteAvalFlags)) {
       if (deleteAvalFlags[userId]) {
@@ -282,7 +341,7 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
       }
     }
 
-    // 6) Certificado general
+    // 8) Certificado general
     if (files?.certGeneral) {
       const certPath = `/uploads/${files.certGeneral.filename}`;
       if (repo.attachGeneralCertificate) {
@@ -296,22 +355,14 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
     return await repo.findById(id, conn);
   } catch (err) {
     await conn.rollback();
+    console.error('updateEventWithOrgs error:', err);
     throw err;
   } finally {
     conn.release();
   }
 }
 
-
-
-// ============================================
-// NUEVAS FUNCIONES PARA DASHBOARD DE SECRETARIAS
-// ============================================
-
-/**
- * Obtiene eventos específicamente para secretarias académicas
- * Incluye información del organizador y estado actual
- */
+// funciones adicionales (sin cambios)
 export async function getEventsForSecretaria() {
   try {
     const eventos = await eventsRepo.getAllEventsWithDetails();
@@ -327,78 +378,38 @@ export async function getEventWithDetails(idEvento) {
   return evt;
 }
 
-/**
- * Evalúa un evento (aprobar/rechazar)
- */
 export async function evaluateEvent({ idEvento, estado, justificacion, actaFile, idSecretaria }) {
   const connection = await pool.getConnection();
-  
   try {
     await connection.beginTransaction();
-    
-    // Verificar que el evento existe y está en estado 'registrado'
-    const [eventoRows] = await connection.execute(
-      'SELECT * FROM evento WHERE idEvento = ?',
-      [idEvento]
-    );
-    
-    if (eventoRows.length === 0) {
-      throw new Error('Evento no encontrado');
-    }
-    
+    const [eventoRows] = await connection.execute('SELECT * FROM evento WHERE idEvento = ?', [idEvento]);
+    if (eventoRows.length === 0) throw new Error('Evento no encontrado');
     const evento = eventoRows[0];
-    
-    // Permitir evaluar eventos en estado 'registrado' o sin estado (null)
     const estadoActual = evento.estado || 'registrado';
-    if (estadoActual !== 'registrado' && evento.estado !== null) {
-      throw new Error(`El evento ya ha sido evaluado (estado actual: ${evento.estado})`);
-    }
-    
-    // Verificar que el usuario es una secretaria
-    const [secretariaRows] = await connection.execute(
-      'SELECT idUsuario FROM secretariaAcademica WHERE idUsuario = ?',
-      [idSecretaria]
-    );
-    
-    if (secretariaRows.length === 0) {
-      throw new Error('Usuario no autorizado para evaluar eventos');
-    }
-    
+    if (estadoActual !== 'registrado' && evento.estado !== null) throw new Error(`El evento ya ha sido evaluado (estado actual: ${evento.estado})`);
+    const [secretariaRows] = await connection.execute('SELECT idUsuario FROM secretariaAcademica WHERE idUsuario = ?', [idSecretaria]);
+    if (secretariaRows.length === 0) throw new Error('Usuario no autorizado para evaluar eventos');
+
     let actaPath = null;
-    
-    // Si se aprueba y hay archivo de acta, guardarlo
     if (estado === 'aprobado' && actaFile) {
       const uploadsDir = path.resolve(process.cwd(), 'uploads', 'actas');
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
-      
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
       const fileName = `acta_${idEvento}_${Date.now()}.pdf`;
       const destPath = path.join(uploadsDir, fileName);
-      
-      // Mover archivo
       fs.renameSync(actaFile.path, destPath);
       actaPath = `/uploads/actas/${fileName}`;
     }
-    
-    // Actualizar estado del evento
-    // Mapear estado a valores válidos de la BD (solo 'aprobado' o 'rechazado')
+
     const estadoValido = estado === 'aprobado' ? 'aprobado' : 'rechazado';
-    
-    await connection.execute(
-      'UPDATE evento SET estado = ? WHERE idEvento = ?',
-      [estadoValido, idEvento]
-    );
-    
-    // Crear evaluación
+    await connection.execute('UPDATE evento SET estado = ? WHERE idEvento = ?', [estadoValido, idEvento]);
     await connection.execute(
       `INSERT INTO evaluacion (estado, fechaEvaluacion, justificacion, actaAprobacion, idEvento, idSecretaria) 
        VALUES (?, CURDATE(), ?, ?, ?, ?)`,
       [estado, justificacion, actaPath, idEvento, idSecretaria]
     );
-    
+
     await connection.commit();
-    
+
     return {
       success: true,
       message: `Evento ${estado} exitosamente`,
@@ -414,7 +425,6 @@ export async function evaluateEvent({ idEvento, estado, justificacion, actaFile,
         }
       }
     };
-    
   } catch (error) {
     await connection.rollback();
     console.error('Error evaluating event:', error);

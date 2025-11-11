@@ -3,57 +3,65 @@ import pool from '../db/pool.js';
 
 /**
  * Upsert aval por (idUsuario, idEvento).
- * Si existe, actualiza avalPdf, principal y tipoAval.
- * Si avalPdf o tipoAval vienen NULL, preserva el valor existente.
+ * - Para INSERT inicial: nunca enviamos NULL en avalPdf o tipoAval (usamos '' si no hay valor).
+ * - Para ON DUPLICATE KEY UPDATE: usamos expresiones que preservan el valor existente
+ *   cuando VALUES(...) viene como cadena vacía (''), es decir, '' significa "no cambiar".
  */
 export async function upsert(record, conn) {
   const connection = conn || pool;
+
+  const avalPdfParam = (typeof record.avalPdf !== 'undefined' && record.avalPdf !== null)
+    ? record.avalPdf
+    : '';
+
+  const tipoAvalParam = (typeof record.tipoAval !== 'undefined' && record.tipoAval !== null)
+    ? record.tipoAval
+    : '';
+
   const sql = `
     INSERT INTO aval (idUsuario, idEvento, avalPdf, principal, tipoAval)
     VALUES (?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
-      avalPdf = COALESCE(VALUES(avalPdf), avalPdf),
+      avalPdf = IF(VALUES(avalPdf) = '', avalPdf, VALUES(avalPdf)),
       principal = VALUES(principal),
-      tipoAval = COALESCE(VALUES(tipoAval), tipoAval)
+      tipoAval = IF(VALUES(tipoAval) = '', tipoAval, VALUES(tipoAval))
   `;
+
   const params = [
-    record.idUsuario,
-    record.idEvento,
-    record.avalPdf ?? null,
+    Number(record.idUsuario),
+    Number(record.idEvento),
+    avalPdfParam,
     record.principal ? 1 : 0,
-    record.tipoAval ?? null
+    tipoAvalParam
   ];
+
+  // debug log (temporal)
+  console.log('[aval.upsert] params', params);
+
   await connection.query(sql, params);
 
-  const [rows] = await connection.query('SELECT * FROM aval WHERE idUsuario = ? AND idEvento = ? LIMIT 1', [record.idUsuario, record.idEvento]);
+  const [rows] = await connection.query(
+    'SELECT * FROM aval WHERE idUsuario = ? AND idEvento = ? LIMIT 1',
+    [record.idUsuario, record.idEvento]
+  );
   return rows[0] || null;
 }
 
-/**
- * Buscar aval(es) por evento
- * conn opcional para usar transacción
- */
 export async function findByEvent(idEvento, conn) {
   const connection = conn || pool;
   const [rows] = await connection.query('SELECT * FROM aval WHERE idEvento = ?', [idEvento]);
   return rows;
 }
 
-/**
- * Buscar aval por usuario+evento
- * conn opcional para usar transacción
- */
 export async function findByUserEvent(idUsuario, idEvento, conn) {
   const connection = conn || pool;
   const [rows] = await connection.query('SELECT * FROM aval WHERE idUsuario = ? AND idEvento = ? LIMIT 1', [idUsuario, idEvento]);
   return rows[0] || null;
 }
 
-/**
- * Eliminar aval por usuario+evento
- */
 export async function deleteAval(idEvento, idUsuario, conn) {
   const connection = conn || pool;
   const [res] = await connection.query('DELETE FROM aval WHERE idEvento = ? AND idUsuario = ?', [idEvento, idUsuario]);
   return res.affectedRows;
 }
+
