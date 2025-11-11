@@ -11,6 +11,7 @@
 import bcrypt from 'bcryptjs';
 import { ValidationError } from '../core/errors/validation-error.js';
 import { findUserByEmail, createUser, validateUserPassword } from '../repositories/auth.repository.js';
+import { sendWelcomeEmail, sendNewUserNotificationToAdmin } from '../services/email.service.js';
 import { findDocumentoById, isDocumentoUsado } from '../repositories/documento.repository.js';
 import { isDocumentoRegistrado } from '../repositories/auth.repository.js';
 
@@ -82,5 +83,18 @@ export const registerUser = async (userData) => {
 		password, // Sin hash
 		tipo
 	});
+
+	// Enviar correos en background (fire-and-forget) para no bloquear el registro
+	// sendWelcomeEmail y sendNewUserNotificationToAdmin devuelven true/false según resultado
+	Promise.allSettled([
+		sendWelcomeEmail(newUser),
+		sendNewUserNotificationToAdmin(newUser)
+	]).then(results => {
+		console.log('Email send results for new user:', results);
+	}).catch(err => {
+		// Esto no debería ocurrir porque usamos allSettled, pero lo dejamos por seguridad
+		console.error('Unexpected error sending welcome/admin emails:', err);
+	});
+
 	return newUser;
 };
