@@ -6,14 +6,14 @@ import { navigateTo } from '../utils/router.js';
  */
 const EVENT_IMAGES = {
   academico: [
-    'https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?w=600&h=400&fit=crop',
-    'https://images.unsplash.com/photo-1552664730-d307ca884978?w=600&h=400&fit=crop',
-    'https://images.unsplash.com/photo-1591160690555-5debda0fb121?w=600&h=400&fit=crop'
+    'public/statics/imgEventoAcademico1.jpeg',
+    'public/statics/imgEventoAcademico2.jpeg',
+    'public/statics/imgEventoAcademico3.jpeg'
   ],
   ludico: [
-    'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600&h=400&fit=crop',
-    'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=600&h=400&fit=crop',
-    'https://images.unsplash.com/photo-1516627145497-ae6968895b2f?w=600&h=400&fit=crop'
+    'public/statics/imgEventoLudico1.jpeg',
+    'public/statics/imgEventoLudico2.jpeg',
+    'public/statics/imgEventoLudico3.jpeg'
   ]
 };
 
