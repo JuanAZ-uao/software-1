@@ -16,6 +16,7 @@ import { organizationEventRouter } from './src/routes/organizationEvent.routes.j
 import {documentoRoutes} from './src/routes/documento.routes.js';
 import { avalRouter } from './src/routes/aval.routes.js';
 import { usuarioRouter } from './src/routes/usuario.routes.js';
+import { evaluacionRouter } from './src/routes/evaluacion.routes.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -97,6 +98,7 @@ export const createApp = () => {
   app.use('/api/organization-event', organizationEventRouter);
   app.use('/api/documentos', documentoRoutes);
   app.use('/api/usuarios', usuarioRouter);
+  app.use('/api/evaluaciones', evaluacionRouter);
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
   app.use('/api', apiNotFoundHandler);
 

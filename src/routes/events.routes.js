@@ -14,7 +14,6 @@ router.get('/:id/instalaciones', eventInstCtrl.getByEvent);
 
 // multer aplicado también en PUT para que req.files y req.body estén disponibles
 router.post('/', uploadAny, (req, res, next) => { next(); }, ctrl.create);
-router.post('/evaluate', uploadAny, (req, res, next) => { next(); }, ctrl.evaluateEvent);
 router.put('/:id', uploadAny, (req, res, next) => { next(); }, ctrl.update);
 router.delete('/:id', ctrl.remove);
 router.post('/:id/send', ctrl.sendEvent);

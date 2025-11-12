@@ -630,10 +630,6 @@ async function openReviewModal(eventId) {
         <div class="mt-16">
           <h3>📍 Ubicación e Instalaciones</h3>
           <div class="info-group">
-            <label>Ubicación:</label>
-            <p>${escapeHtml(evento.ubicacion || evento.lugar || 'No especificada')}</p>
-          </div>
-          <div class="info-group">
             <label>Instalaciones reservadas:</label>
             <div class="instalaciones-list">
               ${instalacionesHTML}
@@ -708,6 +704,7 @@ async function openReviewModal(eventId) {
 /**
  * Abre el modal para evaluar un evento
  */
+// Reemplazar openEvaluateModal
 function openEvaluateModal(eventId, action) {
   const st = getState();
   const evento = st.events?.find(e => String(e.idEvento || e.id) === String(eventId));
@@ -730,15 +727,15 @@ function openEvaluateModal(eventId, action) {
     title.textContent = '✅ Aprobar Evento';
     submitBtn.textContent = 'Aprobar Evento';
     submitBtn.className = 'btn success';
-    if (actaGroup) actaGroup.style.display = 'block';
-    if (actaInput) actaInput.required = true;
   } else {
     title.textContent = '❌ Rechazar Evento';
     submitBtn.textContent = 'Rechazar Evento';
     submitBtn.className = 'btn danger';
-    if (actaGroup) actaGroup.style.display = 'none';
-    if (actaInput) actaInput.required = false;
   }
+
+  // Mostrar campo acta siempre y requerirlo siempre
+  if (actaGroup) actaGroup.style.display = 'block';
+  if (actaInput) actaInput.required = true;
 
   actionInput.value = action;
   eventIdInput.value = eventId;
@@ -758,9 +755,11 @@ function openEvaluateModal(eventId, action) {
   modal.classList.add('open');
 }
 
+
 /**
  * Envía la evaluación del evento
  */
+// Reemplazar submitEvaluation
 async function submitEvaluation(form) {
   try {
     const submitBtn = document.getElementById('submitEvaluate');
@@ -770,36 +769,37 @@ async function submitEvaluation(form) {
     const formData = new FormData(form);
     const action = formData.get('estado');
 
-    if (action === 'aprobado') {
-      const actaFile = formData.get('actaAprobacion');
-      if (!actaFile || actaFile.size === 0) {
-        toast('Debe adjuntar el acta de aprobación (PDF)', 'error');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Aprobar Evento';
-        return;
-      }
-
-      if (actaFile.type !== 'application/pdf') {
-        toast('El acta debe ser un archivo PDF', 'error');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Aprobar Evento';
-        return;
-      }
+    // Acta obligatoria siempre
+    const actaFile = formData.get('actaAprobacion');
+    if (!actaFile || actaFile.size === 0) {
+      toast('Debe adjuntar el acta (PDF) para completar la evaluación', 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = action === 'aprobado' ? 'Aprobar Evento' : 'Rechazar Evento';
+      return;
+    }
+    if (actaFile.type !== 'application/pdf') {
+      toast('El acta debe ser un archivo PDF', 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = action === 'aprobado' ? 'Aprobar Evento' : 'Rechazar Evento';
+      return;
     }
 
+    // Añadir idSecretaria desde sesión si está disponible
     const currentUser = getCurrentUser();
     if (currentUser && currentUser.id) {
-      formData.append('idSecretaria', currentUser.id);
+      formData.set('idSecretaria', currentUser.id);
     }
 
-    console.log('📤 Enviando evaluación:', {
-      idEvento: formData.get('idEvento'),
-      estado: action,
-      justificacion: formData.get('justificacion'),
-      tieneActa: formData.get('actaAprobacion')?.name || 'No'
-    });
+    // Asegurar idEvento está presente
+    const idEvento = formData.get('idEvento');
+    if (!idEvento) {
+      toast('Falta id del evento', 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = action === 'aprobado' ? 'Aprobar Evento' : 'Rechazar Evento';
+      return;
+    }
 
-    const response = await fetch('/api/events/evaluate', {
+    const response = await fetch('/api/evaluaciones', {
       method: 'POST',
       body: formData
     });
@@ -811,17 +811,13 @@ async function submitEvaluation(form) {
       document.getElementById('evaluateModal').classList.remove('open');
       toast(mensaje, 'success');
 
-      console.log('🔄 Recargando eventos después de evaluación...');
       await loadEventosForSecretaria();
 
-      // actualizar estadísticas en pantalla (si existen)
       const st = getState();
       const eventos = Array.isArray(st.events) ? st.events : [];
       const pendientes = eventos.filter(e => e.estado === 'enRevision').length;
       const aprobados = eventos.filter(e => e.estado === 'aprobado').length;
       const rechazados = eventos.filter(e => e.estado === 'rechazado').length;
-
-      // actualizar KPI cards si están presentes
       try {
         const statCards = document.querySelectorAll('.card.stat');
         if (statCards && statCards.length >= 4) {
@@ -832,10 +828,15 @@ async function submitEvaluation(form) {
         }
       } catch (e) { /* noop */ }
 
+      console.log('🔄 Evaluación creada:', result);
     } else {
-      const errText = await response.text().catch(()=>null);
-      console.error('❌ Error al evaluar evento:', response.status, errText);
-      toast('Error al enviar evaluación', 'error');
+      let errMsg = 'Error al enviar evaluación';
+      try {
+        const body = await response.json();
+        if (body && body.error) errMsg = body.error;
+      } catch (e) { /* noop */ }
+      toast(errMsg, 'error');
+      console.error('❌ Error al evaluar evento:', response.status, errMsg);
     }
   } catch (error) {
     console.error('❌ submitEvaluation error:', error);
