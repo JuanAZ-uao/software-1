@@ -37,15 +37,12 @@ export function getCurrentUser() {
 }
 
 /**
- * Cierra la sesión del usuario y navega a login
+ * Cierra la sesión del usuario y navega a home
  */
 export function logout() {
   localStorage.removeItem('uc_auth');
-  if (typeof navigateTo === 'function') {
-    navigateTo('login');
-  } else {
-    window.location.hash = '#login';
-  }
+  // Forzar recarga completa para actualizar todo (header, rutas, etc.)
+  window.location.href = '/#home';
 }
 
 /**
@@ -99,18 +96,33 @@ async function login(email, password) {
       body: JSON.stringify({ email, password })
     });
     setAuth(data.user);
+    // Guardar token JWT si está disponible
+    if (data.token) {
+      localStorage.setItem('uc_auth_token', data.token);
+    }
     showMessage('¡Bienvenido!', 'success');
+    
     // Navegar al dashboard usando el router SPA
     setTimeout(() => {
+      console.log('🔄 Redirigiendo a dashboard después de login...');
+      
+      // Importar y llamar a loadInitialData si es necesario
+      import('./app.js').then(({ loadInitialData }) => {
+        if (loadInitialData && typeof loadInitialData === 'function') {
+          loadInitialData().catch(err => console.error('Error cargando datos iniciales:', err));
+        }
+      }).catch(err => console.log('No loadInitialData disponible:', err));
+      
       if (typeof navigateTo === 'function') {
         navigateTo('dashboard');
       } else {
         window.location.hash = '#dashboard';
       }
-      // Forzar renderizado del router
+      
+      // Forzar renderizado del router después de cambiar el hash
       setTimeout(() => {
         window.dispatchEvent(new HashChangeEvent('hashchange'));
-      }, 10);
+      }, 50);
     }, 1000);
   } catch (error) {
     showMessage(error.message, 'error');

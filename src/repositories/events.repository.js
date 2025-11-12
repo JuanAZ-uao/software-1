@@ -458,5 +458,67 @@ export async function findByIdWithDetails(idEvento) {
     organizaciones
   };
 
+
+
   return evento;
 }
+
+// Obtener eventos filtrados por estado (ej: 'aprobado' para página pública)
+export async function findByState(state) {
+  const [rows] = await pool.query(`
+    SELECT e.*
+    FROM evento e
+    WHERE e.estado = ?
+    ORDER BY e.fecha DESC, e.hora DESC
+  `, [state]);
+
+  return rows || [];
+}
+
+/**
+ * Obtiene la facultad del organizador (usuario que creó el evento)
+ * @param {number} idEvento - ID del evento
+ * @returns {Promise<number|null>} ID de la facultad o null
+ */
+export async function getFacultadByEvento(idEvento) {
+  try {
+    // Primero obtener el evento para saber quién es el organizador
+    const [evento] = await pool.query('SELECT idUsuario FROM evento WHERE idEvento = ? LIMIT 1', [idEvento]);
+    
+    if (!evento || evento.length === 0) return null;
+    
+    const idUsuario = evento[0].idUsuario;
+    
+    // Verificar si es estudiante (tiene programa asociado que tiene facultad)
+    const [estudiante] = await pool.query(`
+      SELECT p.idFacultad
+      FROM estudiante e
+      JOIN programa p ON e.idPrograma = p.idPrograma
+      WHERE e.idUsuario = ?
+      LIMIT 1
+    `, [idUsuario]);
+    
+    if (estudiante && estudiante.length > 0) {
+      return estudiante[0].idFacultad;
+    }
+    
+    // Si es docente (tiene unidad académica que tiene facultad)
+    const [docente] = await pool.query(`
+      SELECT u.idFacultad
+      FROM docente d
+      JOIN unidadacademica u ON d.idUnidadAcademica = u.idUnidadAcademica
+      WHERE d.idUsuario = ?
+      LIMIT 1
+    `, [idUsuario]);
+    
+    if (docente && docente.length > 0) {
+      return docente[0].idFacultad;
+    }
+    
+    return null;
+  } catch (err) {
+    console.error('Error getting facultad by evento:', err);
+    return null;
+  }
+}
+

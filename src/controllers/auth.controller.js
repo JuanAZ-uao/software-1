@@ -36,9 +36,22 @@ export const getCurrentUser = async (req, res) => {
 export const loginUser = async (req, res) => {
     const { email, password } = req.body;
     const user = await authenticate(email, password);
+    
+    // Generar token JWT
+    const token = jwt.sign(
+        { 
+            id: user.idUsuario,
+            email: user.email,
+            tipo: user.tipo 
+        },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+    );
+    
     res.json({
         success: true,
         message: 'Login exitoso',
+        token,
         user: {
             id: user.idUsuario,
             name: `${user.nombre} ${user.apellidos}`,
@@ -47,7 +60,8 @@ export const loginUser = async (req, res) => {
             apellidos: user.apellidos,
             documento: user.documento,
             telefono: user.telefono,
-            tipo: user.tipo || 'usuario'
+            tipo: user.tipo || 'usuario',
+            token
         }
     });
 };

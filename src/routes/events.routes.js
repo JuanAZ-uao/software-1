@@ -6,6 +6,7 @@ import { uploadAny } from '../core/middlewares/upload.js';
 
 const router = Router();
 
+router.get('/approved', ctrl.getApprovedEvents);
 router.get('/', ctrl.getAll);
 router.get('/for-secretaria', ctrl.getEventsForSecretaria);
 router.get('/:id/details', ctrl.getByIdDetailed);

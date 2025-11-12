@@ -30,6 +30,16 @@ export async function getEventsForSecretaria(req, res) {
   }
 }
 
+export async function getApprovedEvents(req, res) {
+  try {
+    const list = await svc.getApprovedEvents();
+    res.json(list);
+  } catch (err) {
+    console.error('events.controller.getApprovedEvents error:', err);
+    res.status(500).json({ error: 'Error obteniendo eventos aprobados' });
+  }
+}
+
 export async function evaluateEvent(req, res) {
   try {
     const filesDict = mapFilesArrayToDict(req.files || []);

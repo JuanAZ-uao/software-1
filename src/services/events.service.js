@@ -8,6 +8,7 @@ import * as orgEventRepo from '../repositories/organizationEvent.repository.js';
 import * as eventsRepo from '../repositories/events.repository.js';
 import * as avalRepo from '../repositories/aval.repository.js';
 import * as usuarioSvc from './usuario.service.js';
+import * as notifSvc from './notifications.service.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -32,6 +33,21 @@ export async function sendEventForReview({ idEvento }) {
     const updated = await repo.updateById(idEvento, { estado: 'enRevision' }, conn);
 
     await conn.commit();
+    
+    // Después de confirmar la transacción, enviar notificaciones a secretarías
+    // (en paralelo, no bloqueamos la respuesta)
+    try {
+      const idFacultad = await repo.getFacultadByEvento(idEvento);
+      if (idFacultad) {
+        notifSvc.notifySecretariasOnReview(idEvento, idFacultad).catch(err => {
+          console.error('Error notifying secretarias on review:', err);
+        });
+      }
+    } catch (err) {
+      console.error('Error in sendEventForReview notification:', err);
+      // No throw, la actualización del evento ya se hizo
+    }
+    
     return updated;
   } catch (err) {
     await conn.rollback();
@@ -64,6 +80,10 @@ async function unlinkFileIfExists(filePath) {
 
 export async function getAllEvents() {
   return await repo.findAll();
+}
+
+export async function getApprovedEvents() {
+  return await repo.findByState('aprobado');
 }
 
 export async function getEventById(id) {
@@ -439,6 +459,17 @@ export async function evaluateEvent({ idEvento, estado, justificacion, actaFile,
     );
 
     await connection.commit();
+
+    // Después de confirmar la transacción, enviar notificación al organizador
+    // (en paralelo, no bloqueamos la respuesta)
+    try {
+      notifSvc.notifyOrganizerOnEvaluation(idEvento, estado, justificacion).catch(err => {
+        console.error('Error notifying organizer on evaluation:', err);
+      });
+    } catch (err) {
+      console.error('Error in evaluateEvent notification:', err);
+      // No throw, la evaluación del evento ya se hizo
+    }
 
     return {
       success: true,

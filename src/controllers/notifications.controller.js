@@ -1,51 +1,114 @@
-export const getNotifications = async (req, res) => {
-  // Por ahora retornamos notificaciones mock basadas en el usuario
-  const notifications = [
-    { 
-      id: 'n1', 
-      title: 'Bienvenido a Universidad Connect', 
-      type: 'sistema', 
-      date: Date.now(), 
-      read: false 
-    },
-    { 
-      id: 'n2', 
-      title: 'Tu evento "Conferencia IA" fue aprobado', 
-      type: 'evento', 
-      date: Date.now() - 86400000, 
-      read: false 
-    },
-    { 
-      id: 'n3', 
-      title: 'Nueva organización registrada', 
-      type: 'organizacion', 
-      date: Date.now() - 172800000, 
-      read: true 
+import * as notifSvc from '../services/notifications.service.js';
+
+/**
+ * Obtiene todas las notificaciones del usuario autenticado
+ */
+export async function getMyNotifications(req, res) {
+  try {
+    const idUsuario = req.user?.id;
+    if (!idUsuario) {
+      return res.status(401).json({ error: 'No autenticado' });
     }
-  ];
-  
-  res.json({
-    success: true,
-    data: notifications
-  });
-};
 
-export const markAsRead = async (req, res) => {
-  const { id } = req.params;
-  
-  // Aquí implementarías la lógica para marcar como leída en BD
-  console.log(`Marcando notificación ${id} como leída`);
-  
-  res.json({
-    success: true,
-    message: 'Notificación marcada como leída'
-  });
-};
+    const soloNoLeidas = req.query.unread === 'true' || req.query.unread === '1';
+    const notificaciones = await notifSvc.getUserNotifications(idUsuario, soloNoLeidas);
 
-export const markAllAsRead = async (req, res) => {
+    res.json(notificaciones);
+  } catch (err) {
+    console.error('notifications.controller.getMyNotifications error:', err);
+    res.status(500).json({ error: 'Error obteniendo notificaciones' });
+  }
+}
+
+/**
+ * Obtiene el conteo de notificaciones no leídas
+ */
+export async function getUnreadCount(req, res) {
+  try {
+    const idUsuario = req.user?.id;
+    if (!idUsuario) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    const count = await notifSvc.getUnreadCount(idUsuario);
+    res.json({ unreadCount: count });
+  } catch (err) {
+    console.error('notifications.controller.getUnreadCount error:', err);
+    res.status(500).json({ error: 'Error obteniendo conteo' });
+  }
+}
+
+/**
+ * Marca una notificación como leída (endpoint deprecated, usar getMyNotifications con id)
+ */
+export async function markAsRead(req, res) {
+  try {
+    const idNotificacion = req.params.id;
+    const idUsuario = req.user?.id;
+
+    if (!idUsuario) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    // Verificar que la notificación pertenece al usuario
+    const notifs = await notifSvc.getUserNotifications(idUsuario);
+    const notif = notifs.find(n => n.idNotificacion === Number(idNotificacion));
+    
+    if (!notif) {
+      return res.status(404).json({ error: 'Notificación no encontrada' });
+    }
+
+    const updated = await notifSvc.markAsRead(idNotificacion);
+    res.json(updated);
+  } catch (err) {
+    console.error('notifications.controller.markAsRead error:', err);
+    res.status(500).json({ error: 'Error marcando notificación como leída' });
+  }
+}
+
+/**
+ * Elimina una notificación
+ */
+export async function deleteNotification(req, res) {
+  try {
+    const idNotificacion = req.params.id;
+    const idUsuario = req.user?.id;
+
+    if (!idUsuario) {
+      return res.status(401).json({ error: 'No autenticado' });
+    }
+
+    // Verificar que la notificación pertenece al usuario
+    const notifs = await notifSvc.getUserNotifications(idUsuario);
+    const notif = notifs.find(n => n.idNotificacion === Number(idNotificacion));
+    
+    if (!notif) {
+      return res.status(404).json({ error: 'Notificación no encontrada' });
+    }
+
+    const deleted = await notifSvc.deleteNotification(idNotificacion);
+    
+    if (!deleted) {
+      return res.status(500).json({ error: 'No se pudo eliminar la notificación' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('notifications.controller.deleteNotification error:', err);
+    res.status(500).json({ error: 'Error eliminando notificación' });
+  }
+}
+
+/**
+ * Marca todas como leídas (endpoint antiguo, mantenido por compatibilidad)
+ */
+export async function markAllAsRead(req, res) {
   // Marcar todas las notificaciones como leídas
   res.json({
     success: true,
     message: 'Todas las notificaciones marcadas como leídas'
   });
-};
+}
+
+// Mantener método antiguo por compatibilidad
+export const getNotifications = getMyNotifications;

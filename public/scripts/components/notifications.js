@@ -4,9 +4,101 @@
  * Este componente renderiza la lista de notificaciones del usuario.
  * Permite marcar notificaciones como leídas y muestra el estado de cada una.
  * Utiliza el estado global para obtener y actualizar las notificaciones.
+ * Se sincroniza con la BD a través de API REST.
  */
 
 import { getState, setState } from '../utils/state.js';
+import { getCurrentUser } from '../auth.js';
+
+let unreadCount = 0;
+
+/**
+ * Obtiene el token JWT del localStorage
+ */
+function getAuthToken() {
+  try {
+    const user = getCurrentUser();
+    return user?.token || localStorage.getItem('uc_auth_token');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Realiza un fetch con autenticación JWT
+ */
+async function fetchWithAuth(url, options = {}) {
+  const token = getAuthToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` }),
+    ...options.headers
+  };
+  
+  return fetch(url, { ...options, headers });
+}
+
+/**
+ * Obtiene las notificaciones desde la API
+ */
+export async function loadNotifications() {
+  try {
+    const res = await fetchWithAuth('/api/notifications');
+    
+    if (!res.ok) {
+      console.error('Error loading notifications:', res.status);
+      return [];
+    }
+    
+    const notificaciones = await res.json();
+    const st = getState();
+    st.notifications = notificaciones;
+    setState(st);
+    
+    // Actualizar conteo de no leídas
+    unreadCount = notificaciones.filter(n => !n.leida).length;
+    updateNotificationBadge();
+    
+    return notificaciones;
+  } catch (err) {
+    console.error('Error fetching notifications:', err);
+    return [];
+  }
+}
+
+/**
+ * Obtiene el conteo de notificaciones no leídas
+ */
+export async function getUnreadCount() {
+  try {
+    const res = await fetchWithAuth('/api/notifications/unread-count');
+    
+    if (!res.ok) return 0;
+    
+    const data = await res.json();
+    unreadCount = data.unreadCount || 0;
+    updateNotificationBadge();
+    return unreadCount;
+  } catch (err) {
+    console.error('Error getting unread count:', err);
+    return 0;
+  }
+}
+
+/**
+ * Actualiza el badge de notificaciones en el header
+ */
+function updateNotificationBadge() {
+  const badge = document.querySelector('.notification-badge');
+  if (badge) {
+    if (unreadCount > 0) {
+      badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+}
 
 /**
  * Renderiza la lista de notificaciones en una tarjeta.
@@ -14,26 +106,175 @@ import { getState, setState } from '../utils/state.js';
  */
 export function renderNotifications(){
   const { notifications } = getState();
-  const items = notifications.map(n => `
-    <div class="list-item">
-      <div>
-        <strong>${n.title}</strong>
-        <div class="muted">${n.type} • ${new Date(n.date).toLocaleString()}</div>
+  
+  if (!notifications || notifications.length === 0) {
+    return `
+      <div class="card">
+        <div class="card-head">
+          <strong>Notificaciones</strong>
+        </div>
+        <div class="card-body" style="text-align:center; padding:40px 20px;">
+          <div class="muted">No tienes notificaciones</div>
+        </div>
       </div>
-      <button class="btn small" data-read="${n.id}">${n.read? 'Leída' : 'Marcar leída'}</button>
+    `;
+  }
+  
+  const items = notifications.map(n => {
+    const fecha = new Date(n.fecha_creacion).toLocaleString('es-CO', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    const tipoColor = {
+      'enRevision': '#f59e0b',
+      'evaluado': '#3b82f6',
+      'aprobado': '#10b981',
+      'rechazado': '#ef4444'
+    };
+    
+    const tipoEmoji = {
+      'enRevision': '📋',
+      'evaluado': '✓',
+      'aprobado': '✓✓',
+      'rechazado': '✗'
+    };
+    
+    return `
+      <div class="notification-item ${n.leida ? 'read' : 'unread'}" data-id="${n.idNotificacion}">
+        <div style="display:flex; gap:12px; align-items:flex-start;">
+          <div style="flex:1;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <strong>${n.titulo}</strong>
+              <span style="background:${tipoColor[n.tipo] || '#6b7280'}; color:white; padding:4px 8px; border-radius:4px; font-size:0.75rem; font-weight:600;">
+                ${tipoEmoji[n.tipo] || '•'} ${n.tipo}
+              </span>
+              ${!n.leida ? '<span style="background:var(--primary); width:8px; height:8px; border-radius:50%;"></span>' : ''}
+            </div>
+            <p style="margin:0 0 8px 0; color:var(--muted-foreground); font-size:0.95rem;">
+              ${n.descripcion || 'Sin descripción adicional'}
+            </p>
+            <small style="color:var(--muted-foreground);">
+              ${fecha}
+              ${n.nombreEvento ? ` • Evento: ${n.nombreEvento}` : ''}
+            </small>
+          </div>
+          <div style="display:flex; gap:8px; flex-shrink:0;">
+            ${!n.leida ? `<button class="btn small mark-read-btn" data-id="${n.idNotificacion}">Marcar leída</button>` : ''}
+            <button class="btn small danger delete-notif-btn" data-id="${n.idNotificacion}">🗑</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  return `
+    <div class="card">
+      <div class="card-head">
+        <strong>Notificaciones</strong>
+        <small style="margin-left:auto; color:var(--muted-foreground);">
+          ${notifications.filter(n => !n.leida).length} sin leer
+        </small>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div style="max-height:600px; overflow-y:auto;">
+          ${items}
+        </div>
+      </div>
     </div>
-  `).join('');
-  return `<div class="card"><div class="card-head"><strong>Notificaciones</strong></div><div class="card-body list">${items||'<div class="muted">Sin notificaciones</div>'}</div></div>`;
+  `;
 }
 
 /**
- * Listener global para marcar notificaciones como leídas
+ * Listener global para marcar notificaciones como leídas o eliminar
  */
-document.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-read]');
-  if (!btn) return;
-  const id = btn.getAttribute('data-read');
-  const st = getState();
-  const i = st.notifications.findIndex(n=>n.id===id);
-  if (i>=0){ st.notifications[i].read = true; setState(st); }
+document.addEventListener('click', async (e) => {
+  // Marcar como leída
+  const markBtn = e.target.closest('.mark-read-btn');
+  if (markBtn) {
+    const id = markBtn.getAttribute('data-id');
+    try {
+      const res = await fetchWithAuth(`/api/notifications/${id}/read`, {
+        method: 'PATCH'
+      });
+      
+      if (res.ok) {
+        const st = getState();
+        const idx = st.notifications.findIndex(n => n.idNotificacion === Number(id));
+        if (idx >= 0) {
+          st.notifications[idx].leida = true;
+          setState(st);
+          markBtn.textContent = 'Leída';
+          markBtn.disabled = true;
+        }
+        await getUnreadCount();
+      }
+    } catch (err) {
+      console.error('Error marking notification as read:', err);
+    }
+    return;
+  }
+  
+  // Eliminar notificación
+  const deleteBtn = e.target.closest('.delete-notif-btn');
+  if (deleteBtn) {
+    const id = deleteBtn.getAttribute('data-id');
+    try {
+      const res = await fetchWithAuth(`/api/notifications/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (res.ok) {
+        const st = getState();
+        st.notifications = st.notifications.filter(n => n.idNotificacion !== Number(id));
+        setState(st);
+        deleteBtn.closest('.notification-item').remove();
+        await getUnreadCount();
+      }
+    } catch (err) {
+      console.error('Error deleting notification:', err);
+    }
+  }
 });
+
+/* Estilos para notificaciones */
+const notifStyles = document.createElement('style');
+notifStyles.textContent = `
+  .notification-item {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s ease;
+  }
+
+  .notification-item:hover {
+    background: rgba(30, 58, 138, 0.03);
+  }
+
+  .notification-item.unread {
+    background: rgba(30, 58, 138, 0.08);
+    border-left: 4px solid var(--primary);
+  }
+
+  .notification-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: var(--destructive);
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+`;
+if (!document.querySelector('style[data-notif-styles]')) {
+  notifStyles.setAttribute('data-notif-styles', '1');
+  document.head.appendChild(notifStyles);
+}

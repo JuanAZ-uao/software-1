@@ -3,6 +3,9 @@ import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
 import { qs, toast, formatDate } from '../utils/helpers.js';
 
+// Bandera para evitar agregar listeners múltiples veces
+let dashboardSecretariaEventsBindings = false;
+
 function escapeHtml(s) {
   if (!s && s !== 0) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -219,6 +222,20 @@ export function renderDashboardSecretaria() {
  * Bind de eventos específicos para el dashboard de secretaria
  */
 export function bindDashboardSecretariaEvents() {
+  // Asegurar que los modales inician cerrados
+  const evaluateModal = document.getElementById('evaluateModal');
+  const reviewModal = document.getElementById('reviewModal');
+  if (evaluateModal) evaluateModal.classList.remove('open');
+  if (reviewModal) reviewModal.classList.remove('open');
+
+  // Evitar agregar listeners múltiples veces
+  if (dashboardSecretariaEventsBindings) {
+    console.log('ℹ️ Listeners ya inicializados, saltando re-bind');
+    return;
+  }
+  dashboardSecretariaEventsBindings = true;
+  console.log('✅ Inicializando listeners del dashboard de secretaria');
+
   // Búsqueda en tiempo real
   document.addEventListener('input', (e) => {
     if (e.target?.id === 'searchEvents') {

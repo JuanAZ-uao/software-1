@@ -10,7 +10,7 @@ import { renderOrganizations } from './components/organizations.js';
 import { renderEvents } from './components/events.js';
 import { renderUsers } from './components/users.js';
 import { renderCalendar } from './components/calendar.js';
-import { renderNotifications } from './components/notifications.js';
+import { renderNotifications, loadNotifications, getUnreadCount } from './components/notifications.js';
 import { renderSettings } from './components/settings.js';
 import { renderAuthView, isAuthenticated, bindAuthEvents, handleResetPasswordPage, getCurrentUser } from './auth.js';
 
@@ -37,12 +37,13 @@ export async function loadInitialData() {
     // Si es secretaria, cargar eventos para evaluación
     const eventsEndpoint = isSecretaria ? '/api/events/for-secretaria' : '/api/events';
     
-    const [eventsRes, installationsRes, orgsRes, facultadesRes, programasRes] = await Promise.all([
+    const [eventsRes, installationsRes, orgsRes, facultadesRes, programasRes, notificationsRes] = await Promise.all([
       fetch(eventsEndpoint).catch(() => ({ ok: false })),
       fetch('/api/installations').catch(() => ({ ok: false })),
       fetch('/api/organizations').catch(() => ({ ok: false })),
       fetch('/api/facultades').catch(() => ({ ok: false })),
-      fetch('/api/programas').catch(() => ({ ok: false }))
+      fetch('/api/programas').catch(() => ({ ok: false })),
+      loadNotifications().catch(() => [])
     ]);
 
     const st = getState();
@@ -77,6 +78,9 @@ export async function loadInitialData() {
       setState({ ...getState(), programas });
     }
 
+    console.log('✅ Notificaciones cargadas');
+    await getUnreadCount();
+
     console.log('✅ Datos iniciales cargados correctamente');
   } catch (error) {
     console.error('❌ Error cargando datos iniciales:', error);
@@ -90,11 +94,6 @@ async function renderRoute(route) {
     if (handled) return;
   }
 
-  if (!isAuthenticated() && route !== 'login') {
-    navigateTo('login');
-    return;
-  }
-
   let view = '';
   switch (route) {
     case 'login':
@@ -102,6 +101,23 @@ async function renderRoute(route) {
       mount.innerHTML = `<main class="auth"><div class="card auth-card"><div class="card-body">${view}</div></div></main><div id="toast" class="toast"></div>`;
       bindAuthEvents();
       return;
+
+    case 'home': {
+      // Página pública con eventos aprobados
+      const { renderHome } = await import('./components/home.js');
+      view = renderHome();
+      mount.innerHTML = renderShell(view);
+      const headerSlot = qs('#header-slot');
+      if (headerSlot) headerSlot.innerHTML = renderHeader();
+      // Importar y ejecutar listeners de home si existen
+      try {
+        const { bindHomeEvents } = await import('./components/home.js');
+        bindHomeEvents?.();
+      } catch (e) {
+        console.log('No bindHomeEvents found');
+      }
+      return;
+    }
 
     case 'dashboard': {
       // Detectar rol del usuario y renderizar dashboard correspondiente
@@ -164,7 +180,22 @@ async function renderRoute(route) {
       break;
     
     default: {
-      // Default también respeta el rol
+      // Si no autenticado, mostrar home; si autenticado, mostrar dashboard según rol
+      if (!isAuthenticated()) {
+        const { renderHome } = await import('./components/home.js');
+        view = renderHome();
+        mount.innerHTML = renderShell(view);
+        const headerSlot = qs('#header-slot');
+        if (headerSlot) headerSlot.innerHTML = renderHeader();
+        try {
+          const { bindHomeEvents } = await import('./components/home.js');
+          bindHomeEvents?.();
+        } catch (e) {
+          console.log('No bindHomeEvents found');
+        }
+        return;
+      }
+
       const defaultUser = getCurrentUser();
       console.log('🔍 Usuario en default:', defaultUser);
       
