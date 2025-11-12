@@ -11,6 +11,36 @@ import * as usuarioSvc from './usuario.service.js';
 import fs from 'fs';
 import path from 'path';
 
+export async function sendEventForReview({ idEvento }) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const ev = await repo.findById(idEvento, conn);
+    if (!ev) {
+      await conn.rollback();
+      return null;
+    }
+
+    // Solo permitir la transición si el evento está en 'registrado'
+    if (String(ev.estado) !== 'registrado') {
+      await conn.rollback();
+      return ev;
+    }
+
+    // Actualizar estado a 'enRevision'
+    const updated = await repo.updateById(idEvento, { estado: 'enRevision' }, conn);
+
+    await conn.commit();
+    return updated;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 function validateEvento(payload) {
   if (!payload) throw Object.assign(new Error('Payload evento requerido'), { status: 400 });
   if (!payload.nombre) throw Object.assign(new Error('Nombre requerido'), { status: 400 });

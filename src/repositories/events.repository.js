@@ -192,7 +192,6 @@ export async function getAllEventsWithDetails() {
       const [rows] = await pool.query(query, params);
       return Array.isArray(rows) && rows.length ? rows[0] : null;
     } catch (err) {
-      // no lanzar aquí: dejar que el llamador decida — devolvemos null
       console.error('singleRow query error:', err.sqlMessage || err.message);
       return null;
     }
@@ -226,7 +225,6 @@ export async function getAllEventsWithDetails() {
         // ignora y prueba siguiente candidato
       }
     }
-    // si no hubo filas o ninguna tabla encontrada, devolver vacío
     return [];
   }
 
@@ -241,7 +239,6 @@ export async function getAllEventsWithDetails() {
         'SELECT idUsuario, nombre, apellidos, email, telefono FROM usuario WHERE idUsuario = ? LIMIT 1',
         [e.idUsuario]
       );
-      // si el schema usa "id" en vez de idUsuario
       if (!organizador) {
         organizador = await singleRow(
           'SELECT id, nombre, apellidos, email, telefono FROM usuario WHERE id = ? LIMIT 1',
@@ -251,7 +248,6 @@ export async function getAllEventsWithDetails() {
     }
 
     // 2. instalaciones asociadas (evento_instalacion -> instalacion)
-    // intentamos la tabla asociativa con los nombres más comunes
     const instAssocCandidates = [
       'SELECT i.idInstalacion, i.nombre, i.capacidad FROM instalacion i JOIN evento_instalacion ei ON i.idInstalacion = ei.idInstalacion WHERE ei.idEvento = ?',
       'SELECT i.id, i.nombre, i.capacidad FROM instalacion i JOIN evento_instalacion ei ON i.id = ei.idInstalacion WHERE ei.idEvento = ?',
@@ -265,7 +261,6 @@ export async function getAllEventsWithDetails() {
 
     // 3. aval principal (si existe)
     let aval = await singleRow('SELECT * FROM aval WHERE idEvento = ? AND principal = 1 LIMIT 1', [idEvento]);
-    // fallback: si no existe con principal=1 pero hay una fila, tomar la primera
     if (!aval) {
       const alt = await singleRow('SELECT * FROM aval WHERE idEvento = ? LIMIT 1', [idEvento]);
       if (alt) aval = alt;
@@ -273,40 +268,68 @@ export async function getAllEventsWithDetails() {
 
     // 4. organizaciones asociadas (desde tabla asociativa)
     const orgAssocs = await getOrgAssociationsForEvent(idEvento);
-    // mapear cada asociación a datos de organización y certificado si aplica
     const organizaciones = await Promise.all(orgAssocs.map(async (assoc) => {
-      // determinar idOrganizacion en las posibles columnas
       const idOrg = assoc.idOrganizacion || assoc.organizacionId || assoc.org_id || assoc.id_organizacion || assoc.idOrg || assoc.id;
-      if (!idOrg) {
-        return {
-          rawAssoc: assoc
-        };
-      }
+      if (!idOrg) return { rawAssoc: assoc };
+
       const org = await singleRow('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal FROM organizacion WHERE idOrganizacion = ? LIMIT 1', [idOrg])
         || await singleRow('SELECT id, nombre, sectorEconomico, representanteLegal FROM organizacion WHERE id = ? LIMIT 1', [idOrg])
         || await singleRow('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal FROM organization WHERE idOrganizacion = ? LIMIT 1', [idOrg])
         || null;
 
-      // normalizar campos posibles en la asociación (participante, esRepresentanteLegal, certificadoParticipacion)
       const participante = assoc.participante || assoc.nombreEncargado || assoc.encargado || assoc.nombreParticipante || null;
       const esRep = (assoc.esRepresentanteLegal === 'si' || assoc.esRepresentanteLegal === 'true' || assoc.esRepresentanteLegal === true || assoc.representanteLegal === true);
       const certificado = assoc.certificadoParticipacion || assoc.certificado || assoc.cert_path || null;
 
-      return {
-        association: assoc,
-        organizacion: org,
-        participante,
-        esRepresentanteLegal: !!esRep,
-        certificadoPath: certificado
-      };
+      return { association: assoc, organizacion: org, participante, esRepresentanteLegal: !!esRep, certificadoPath: certificado };
     }));
 
-    // 5. construir objeto final normalizado
+    // 5. participantes: todos los usuarios vinculados al evento vía tabla aval
+    //    LEFT JOIN por idUsuario (normalizado) para evitar perder filas si no hay usuario
+    const participantRows = await rowsQuery(
+      `SELECT
+         COALESCE(u.idUsuario, u2.idUsuario) AS idUsuario,
+         COALESCE(u.nombre, u2.nombre) AS nombre,
+         COALESCE(u.apellidos, u2.apellidos) AS apellidos,
+         COALESCE(u.email, u2.email) AS email,
+         COALESCE(u.telefono, u2.telefono) AS telefono,
+         a.avalPdf, a.tipoAval, a.principal, a.idUsuario AS rawIdUsuario
+       FROM aval a
+       LEFT JOIN usuario u  ON a.idUsuario = u.idUsuario
+       LEFT JOIN usuario u2 ON a.idUsuario = u2.idUsuario
+       WHERE a.idEvento = ?`,
+      [idEvento]
+    );
+
+    // Si la consulta anterior no devolvió filas, traer directamente desde aval
+    let participantes = [];
+    if (!participantRows.length) {
+      const avalOnly = await rowsQuery('SELECT idUsuario AS rawIdUsuario, avalPdf, tipoAval, principal FROM aval WHERE idEvento = ?', [idEvento]);
+      participantes = avalOnly.map(p => ({
+        idUsuario: p.rawIdUsuario || null,
+        nombre: null,
+        email: '',
+        telefono: '',
+        avalPdf: p.avalPdf || null,
+        tipoAval: p.tipoAval || null,
+        principal: Number(p.principal) === 1 ? 1 : 0
+      }));
+    } else {
+      participantes = participantRows.map(p => ({
+        idUsuario: p.idUsuario || p.rawIdUsuario || null,
+        nombre: `${(p.nombre || '')} ${(p.apellidos || '')}`.trim() || null,
+        email: p.email || '',
+        telefono: p.telefono || '',
+        avalPdf: p.avalPdf || null,
+        tipoAval: p.tipoAval || null,
+        principal: Number(p.principal) === 1 ? 1 : 0
+      }));
+    }
+
+    // 6. construir objeto final normalizado
     return {
       ...e,
       capacidad: (e.capacidad !== null && e.capacidad !== undefined) ? e.capacidad : null,
-      ubicacion: e.ubicacion || '',
-      descripcion: e.descripcion || '',
       organizador: organizador ? {
         idUsuario: organizador.idUsuario || organizador.id || null,
         nombre: `${(organizador.nombre || '')} ${(organizador.apellidos || '')}`.trim() || null,
@@ -323,12 +346,15 @@ export async function getAllEventsWithDetails() {
         tipoAval: aval.tipoAval || aval.tipo || null,
         idAval: aval.idAval || aval.id || null
       } : null,
+      participantes,
       organizaciones
     };
   }));
 
   return detailed;
 }
+
+
 
 // src/repositories/events.repository.js
 // Añadir/importar pool al inicio del archivo si no está

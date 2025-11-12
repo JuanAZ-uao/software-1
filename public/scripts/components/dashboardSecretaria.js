@@ -443,7 +443,7 @@ async function openReviewModal(eventId) {
       return;
     }
 
-    // Procesar instalaciones (normaliza varios formatos)
+    // Instalaciones
     let instalacionesHTML = 'No especificadas';
     if (evento.instalaciones && Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
       instalacionesHTML = evento.instalaciones.map(inst => {
@@ -458,7 +458,7 @@ async function openReviewModal(eventId) {
       instalacionesHTML = evento.instalacionesIds.map(id => `<span class="badge secondary">${escapeHtml(String(id))}</span>`).join(' ');
     }
 
-    // Formatear nombre del organizador (soporta objeto o campos planos)
+    // Organizador
     let organizadorNombre = null;
     let organizadorEmail = '';
     let organizadorTelefono = '';
@@ -480,7 +480,6 @@ async function openReviewModal(eventId) {
         organizadorEmail = evento.organizadorEmail || '';
         organizadorTelefono = evento.organizadorTelefono || '';
       } else {
-        // último recurso: intentar leer desde evento.organizador.* si vino con otro shape
         organizadorNombre = evento.organizadorNombre || evento.organizador || 'N/A';
         organizadorEmail = evento.organizadorEmail || '';
         organizadorTelefono = evento.organizadorTelefono || '';
@@ -491,11 +490,10 @@ async function openReviewModal(eventId) {
     if (!organizadorEmail) organizadorEmail = '';
     if (!organizadorTelefono) organizadorTelefono = '';
 
-    // Normalizar organizaciones (puede venir como array de organizacion u objetos con association)
+    // Organizaciones (asegurar variable definida)
     let organizacionesHTML = '';
     if (Array.isArray(evento.organizaciones) && evento.organizaciones.length) {
       const orgItems = evento.organizaciones.map(o => {
-        // organización puede venir en o.organizacion o directamente o.nombre
         const orgData = o.organizacion || o;
         const nombreOrg = orgData?.nombre || orgData?.nombreOrganizacion || o.nombre || 'Organización';
         const participante = o.participante || o.nombreEncargado || o.encargado || orgData?.contacto || null;
@@ -504,12 +502,83 @@ async function openReviewModal(eventId) {
       organizacionesHTML = `<div class="organizaciones-list">${orgItems.join('')}</div>`;
     }
 
-    // Aval y certificados (acepta varios shapes)
-    const avalPdf = evento.avalPdf || (evento.aval && (evento.aval.avalPdf || evento.aval.path)) || null;
-    const tipoAval = evento.tipoAval || (evento.aval && (evento.aval.tipoAval || evento.aval.tipo)) || null;
+    // Participantes: usar evento.participantes o evento.avales (fallback)
+    const participantesRaw = evento.participantes || evento.avales || evento.avalesList || [];
+    const participantesNormalized = Array.isArray(participantesRaw) ? participantesRaw.map(p => ({
+      idUsuario: p.idUsuario ?? p.id ?? p.rawIdUsuario ?? null,
+      nombre: (p.nombre || p.nombreCompleto || p.fullName) ? `${(p.nombre || '')} ${(p.apellidos || '')}`.trim() : (p.nombre || p.fullName || null),
+      email: p.email || '',
+      telefono: p.telefono || '',
+      avalPdf: p.avalPdf || p.path || null,
+      tipoAval: p.tipoAval || p.tipo || null,
+      principal: Number(p.principal) === 1 ? 1 : 0
+    })) : [];
+
+    // Determinar aval principal (no repetir enlaces)
+    let principalAvalPdf = evento.avalPdf || (evento.aval && (evento.aval.avalPdf || evento.aval.path)) || null;
+    if (!principalAvalPdf) {
+      const principalRow = participantesNormalized.find(x => x.principal === 1);
+      if (principalRow) principalAvalPdf = principalRow.avalPdf || null;
+    }
+
+    // Excluir el organizador principal de la lista de participantes (ya se muestra arriba)
+    const participantesFiltered = participantesNormalized.filter(p => Number(p.principal) !== 1);
+
+    // Si faltan nombre/email/telefono para algún participante, intentar enriquecer desde API /api/usuarios/:id
+    async function enrichMissingUserInfo(list) {
+      const toFetch = list.filter(p => (!p.nombre || !p.email || !p.telefono) && p.idUsuario);
+      if (!toFetch.length) return;
+      await Promise.all(toFetch.map(async p => {
+        try {
+          const r = await fetch(`/api/usuarios/${p.idUsuario}`);
+          if (!r.ok) return;
+          const u = await r.json();
+          const nombreFromApi = u.nombre ? `${u.nombre} ${u.apellidos || ''}`.trim() : (u.fullName || u.name || null);
+          p.nombre = p.nombre || nombreFromApi || null;
+          p.email = p.email || u.email || '';
+          p.telefono = p.telefono || u.telefono || u.celular || '';
+        } catch (e) {
+          // noop: si falla, dejamos los campos como estaban
+        }
+      }));
+    }
+
+    await enrichMissingUserInfo(participantesFiltered);
+
+    // Construir HTML de participantes: solo nombre, correo y teléfono; mostrar enlace al aval solo si tienen un archivo propio distinto al principal
+    let participantesHTML = '';
+    if (participantesFiltered.length) {
+      participantesHTML = participantesFiltered.map(p => {
+        const name = p.nombre || `Usuario ${p.idUsuario || 'sin id'}`;
+        const emailHtml = p.email ? `<div class="muted">${escapeHtml(p.email)}</div>` : '';
+        const phoneHtml = p.telefono ? `<div class="muted">${escapeHtml(p.telefono)}</div>` : '';
+        let pdfLinkHtml = '';
+        if (p.avalPdf) {
+          if (principalAvalPdf && p.avalPdf === principalAvalPdf) {
+            pdfLinkHtml = '';
+          } else {
+            pdfLinkHtml = `<div style="margin-top:6px;"><a href="${escapeHtml(p.avalPdf)}" target="_blank" class="btn small primary">📥 Ver aval</a></div>`;
+          }
+        }
+        return `
+          <div class="participant-item" style="padding:8px 0;border-bottom:1px solid #eee;">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <strong>${escapeHtml(name)}</strong>
+              ${emailHtml}
+              ${phoneHtml}
+              ${pdfLinkHtml}
+            </div>
+          </div>
+        `;
+      }).join('');
+    } else {
+      participantesHTML = `<div class="info-group"><p class="muted">No hay participantes registrados</p></div>`;
+    }
+
+    // Certificado de participación (varios shapes)
     const certificadoParticipacion = evento.certificadoParticipacion || evento.certificado || null;
 
-    // Inject HTML
+    // Inject HTML (incluye sección Participantes y muestra solo un aval principal en Documentos Adjuntos)
     content.innerHTML = `
       <div class="evento-review">
         <div class="grid gap-16">
@@ -571,32 +640,30 @@ async function openReviewModal(eventId) {
             </div>
           </div>
         </div>
-        
-        ${evento.descripcion ? `
-          <div class="mt-16">
-            <h3>📝 Descripción del Evento</h3>
-            <div class="info-group">
-              <p style="white-space: pre-wrap;">${escapeHtml(evento.descripcion)}</p>
-            </div>
+
+        <div class="mt-16">
+          <h3>👥 Participantes</h3>
+          <div class="participants-list">
+            ${participantesHTML}
           </div>
-        ` : ''}
-        
+        </div>
+
         ${organizacionesHTML ? `
           <div class="mt-16">
             <h3>🏢 Organizaciones Participantes</h3>
             ${organizacionesHTML}
           </div>
         ` : ''}
-        
+
         <div class="mt-16">
           <h3>📎 Documentos Adjuntos</h3>
-          ${avalPdf ? `
+          ${principalAvalPdf ? `
             <div class="documento-item">
               <div>
                 <strong>📄 Aval de Aprobación</strong>
-                <div class="muted">Tipo: ${escapeHtml(tipoAval === 'director_programa' ? 'Director de Programa' : tipoAval === 'director_docencia' ? 'Director de Docencia' : tipoAval || 'N/A')}</div>
+                <div class="muted">Tipo: ${escapeHtml((evento.tipoAval || (evento.aval && evento.aval.tipoAval) || '') ? (evento.tipoAval || (evento.aval && evento.aval.tipoAval)) : 'N/A')}</div>
               </div>
-              <a href="${escapeHtml(avalPdf)}" target="_blank" class="btn small primary">
+              <a href="${escapeHtml(principalAvalPdf)}" target="_blank" class="btn small primary">
                 📥 Ver PDF
               </a>
             </div>
@@ -621,11 +688,7 @@ async function openReviewModal(eventId) {
         <div class="mt-16" style="background: #f8f9fa; padding: 12px; border-radius: 6px;">
           <small class="muted">
             <strong>Estado actual:</strong> 
-            <span class="badge ${
-              evento.estado === 'aprobado' ? 'success' : 
-              evento.estado === 'rechazado' ? 'danger' : 
-              'warning'
-            }">
+            <span class="badge ${evento.estado === 'aprobado' ? 'success' : evento.estado === 'rechazado' ? 'danger' : 'warning'}">
               ${escapeHtml(evento.estado || 'registrado')}
             </span>
           </small>
@@ -751,45 +814,41 @@ async function submitEvaluation(form) {
       console.log('🔄 Recargando eventos después de evaluación...');
       await loadEventosForSecretaria();
 
+      // actualizar estadísticas en pantalla (si existen)
       const st = getState();
       const eventos = Array.isArray(st.events) ? st.events : [];
       const pendientes = eventos.filter(e => e.estado === 'enRevision').length;
       const aprobados = eventos.filter(e => e.estado === 'aprobado').length;
       const rechazados = eventos.filter(e => e.estado === 'rechazado').length;
 
-      const statsCards = document.querySelectorAll('.secretaria-dashboard .stat .kpi');
-      if (statsCards.length === 4) {
-        statsCards[0].textContent = eventos.length;
-        statsCards[1].textContent = pendientes;
-        statsCards[2].textContent = aprobados;
-        statsCards[3].textContent = rechazados;
-      }
-
-      console.log('✅ Vista actualizada automáticamente');
-      console.log('📊 Estadísticas:', { total: eventos.length, pendientes, aprobados, rechazados });
+      // actualizar KPI cards si están presentes
+      try {
+        const statCards = document.querySelectorAll('.card.stat');
+        if (statCards && statCards.length >= 4) {
+          statCards[0].querySelector('.kpi').textContent = eventos.length;
+          statCards[1].querySelector('.kpi').textContent = pendientes;
+          statCards[2].querySelector('.kpi').textContent = aprobados;
+          statCards[3].querySelector('.kpi').textContent = rechazados;
+        }
+      } catch (e) { /* noop */ }
 
     } else {
-      const error = await response.json().catch(() => ({}));
-      toast(error.error || error.message || 'Error al evaluar evento', 'error');
+      const errText = await response.text().catch(()=>null);
+      console.error('❌ Error al evaluar evento:', response.status, errText);
+      toast('Error al enviar evaluación', 'error');
     }
   } catch (error) {
-    console.error('❌ Error submitting evaluation:', error);
-    toast('Error al evaluar evento', 'error');
+    console.error('❌ submitEvaluation error:', error);
+    toast('Error al enviar evaluación', 'error');
   } finally {
     const submitBtn = document.getElementById('submitEvaluate');
     if (submitBtn) {
       submitBtn.disabled = false;
-      const action = document.getElementById('evaluateAction')?.value;
-      submitBtn.textContent = action === 'aprobado' ? 'Aprobar Evento' : 'Rechazar Evento';
+      submitBtn.textContent = 'Confirmar';
     }
   }
 }
 
-// Export helpers for other modules if needed
 export {
-  loadEventosForSecretaria,
-  openReviewModal,
-  openEvaluateModal,
-  submitEvaluation,
-  filterEvents
+  loadEventosForSecretaria
 };
