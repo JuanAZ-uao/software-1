@@ -25,6 +25,42 @@ export function isAuthenticated() {
 }
 
 /**
+ * Valida la autenticación con el servidor
+ * Limpia la sesión si el token es inválido
+ * @returns {Promise<boolean>}
+ */
+export async function validateAuthentication() {
+  if (!isAuthenticated()) {
+    return false;
+  }
+
+  try {
+    const token = getCurrentUser()?.token || localStorage.getItem('uc_auth_token');
+    
+    const response = await fetch(`${API_BASE}/auth/verify`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      // Token inválido o expirado
+      console.log('⚠️ Token inválido o expirado');
+      logout();
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('Error validating authentication:', err);
+    logout();
+    return false;
+  }
+}
+
+/**
  * Obtiene el usuario autenticado actual desde localStorage
  * @returns {object|null}
  */

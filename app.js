@@ -84,6 +84,27 @@ export const createApp = () => {
       });
     }
   });
+
+  // Endpoint para debuggear notificaciones
+  app.get('/api/debug/notifications-raw', async (_req, res) => {
+    try {
+      const pool = (await import('./src/db/pool.js')).default;
+      const [rows] = await pool.execute(`SELECT * FROM notificacion LIMIT 5`);
+      const [allRows] = await pool.execute(`SELECT COUNT(*) as total FROM notificacion`);
+      res.json({ 
+        success: true, 
+        total: allRows[0].total,
+        sample: rows,
+        fields: rows.length > 0 ? Object.keys(rows[0]) : []
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  });
   
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);

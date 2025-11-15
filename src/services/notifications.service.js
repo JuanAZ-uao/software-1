@@ -9,6 +9,8 @@ import * as eventRepo from '../repositories/events.repository.js';
  */
 export async function notifySecretariasOnReview(idEvento, idFacultad) {
   try {
+    console.log(`📨 Notificando secretarias: idEvento=${idEvento}, idFacultad=${idFacultad}`);
+    
     // Obtener evento para detalles
     const evento = await eventRepo.findById(idEvento);
     if (!evento) throw new Error('Evento no encontrado');
@@ -17,26 +19,35 @@ export async function notifySecretariasOnReview(idEvento, idFacultad) {
     const secretariaIds = await notifRepo.getSecretariasByFacultad(idFacultad);
     
     if (secretariaIds.length === 0) {
-      console.warn(`No secretarias found for facultad ${idFacultad}`);
+      console.warn(`⚠️ No secretarias found for facultad ${idFacultad}`);
       return [];
     }
+
+    console.log(`✅ Encontradas ${secretariaIds.length} secretarias`);
 
     // Crear notificación para cada secretaria
     const notificaciones = [];
     for (const idSecretaria of secretariaIds) {
+      const titulo = `Nuevo evento en revisión: ${evento.nombre}`;
+      const descripcion = `El evento "${evento.nombre}" programado para ${evento.fecha} a las ${evento.hora} ha sido enviado a revisión. Revisa los detalles y evalúa el evento.`;
+      
+      console.log(`  → Creando notificación para secretaria ${idSecretaria}: "${titulo}"`);
+      
       const notif = await notifRepo.createNotification(
         idSecretaria,
         idEvento,
         'enRevision',
-        `Nuevo evento en revisión: ${evento.nombre}`,
-        `El evento "${evento.nombre}" programado para ${evento.fecha} a las ${evento.hora} ha sido enviado a revisión. Revisa los detalles y evalúa el evento.`
+        titulo,
+        descripcion
       );
+      console.log(`    ✓ Notificación creada: ${notif.idNotificacion}`);
       notificaciones.push(notif);
     }
 
+    console.log(`✅ ${notificaciones.length} notificaciones creadas exitosamente`);
     return notificaciones;
   } catch (err) {
-    console.error('Error notifying secretarias on review:', err);
+    console.error('❌ Error notifying secretarias on review:', err);
     throw err;
   }
 }
@@ -50,6 +61,8 @@ export async function notifySecretariasOnReview(idEvento, idFacultad) {
  */
 export async function notifyOrganizerOnEvaluation(idEvento, estado, justificacion) {
   try {
+    console.log(`📨 Notificando organizador: idEvento=${idEvento}, estado=${estado}`);
+    
     // Obtener evento para detalles
     const evento = await eventRepo.findById(idEvento);
     if (!evento) throw new Error('Evento no encontrado');
@@ -66,6 +79,9 @@ export async function notifyOrganizerOnEvaluation(idEvento, estado, justificacio
       ? `Tu evento "${evento.nombre}" ha sido aprobado exitosamente.`
       : `Tu evento "${evento.nombre}" ha sido rechazado. Razón: ${justificacion || 'Sin especificar'}`;
 
+    console.log(`  → Creando notificación para organizador ${idOrganizador}: "${titulo}"`);
+    console.log(`  → Descripción: "${descripcion}"`);
+
     const notif = await notifRepo.createNotification(
       idOrganizador,
       idEvento,
@@ -74,9 +90,10 @@ export async function notifyOrganizerOnEvaluation(idEvento, estado, justificacio
       descripcion
     );
 
+    console.log(`✅ Notificación creada: ${notif.idNotificacion}`);
     return notif;
   } catch (err) {
-    console.error('Error notifying organizer on evaluation:', err);
+    console.error('❌ Error notifying organizer on evaluation:', err);
     throw err;
   }
 }

@@ -1,6 +1,8 @@
 // src/services/evaluacion.service.js
 import pool from '../db/pool.js';
 import * as evalRepo from '../repositories/evaluacion.repository.js';
+import * as notifSvc from './notifications.service.js';
+import * as eventRepo from '../repositories/events.repository.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -80,6 +82,16 @@ export async function createEvaluation({ idEvento, estado, justificacion = null,
     const createdEval = await evalRepo.findById(insertedId);
     const [updatedEventRows] = await pool.query('SELECT * FROM evento WHERE idEvento = ?', [idEvento]);
     const updatedEvent = Array.isArray(updatedEventRows) && updatedEventRows.length ? updatedEventRows[0] : null;
+
+    // Notificar al organizador después de confirmar la evaluación
+    try {
+      notifSvc.notifyOrganizerOnEvaluation(idEvento, estado, justificacion).catch(err => {
+        console.error('Error notifying organizer on evaluation:', err);
+      });
+    } catch (err) {
+      console.error('Error in createEvaluation notification:', err);
+      // No throw, la evaluación ya se hizo correctamente
+    }
 
     return {
       evaluacion: createdEval,

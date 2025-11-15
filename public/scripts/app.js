@@ -10,9 +10,9 @@ import { renderOrganizations } from './components/organizations.js';
 import { renderEvents } from './components/events.js';
 import { renderUsers } from './components/users.js';
 import { renderCalendar } from './components/calendar.js';
-import { renderNotifications, loadNotifications, getUnreadCount } from './components/notifications.js';
+import { renderNotifications, loadNotifications, getUnreadCount, startNotificationRefresh, stopNotificationRefresh } from './components/notifications.js';
 import { renderSettings } from './components/settings.js';
-import { renderAuthView, isAuthenticated, bindAuthEvents, handleResetPasswordPage, getCurrentUser } from './auth.js';
+import { renderAuthView, isAuthenticated, bindAuthEvents, handleResetPasswordPage, getCurrentUser, validateAuthentication } from './auth.js';
 
 
 const mount = document.getElementById('app');
@@ -224,8 +224,14 @@ async function renderRoute(route) {
   ensureTheme();
   initState();
 
+  // Validar autenticación con el servidor
   if (isAuthenticated()) {
-    await loadInitialData();
+    const isValid = await validateAuthentication();
+    if (isValid) {
+      await loadInitialData();
+      // Iniciar auto-refresh de notificaciones
+      startNotificationRefresh();
+    }
   }
 
   initRouter(renderRoute);

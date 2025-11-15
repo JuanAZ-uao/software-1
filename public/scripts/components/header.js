@@ -8,7 +8,7 @@ export function renderHeader() {
   const isAdmin = role === 'Administrador';
 
   const { notifications = [] } = getState();
-  const unread = Array.isArray(notifications) ? notifications.filter(n => !n.read).length : 0;
+  const unread = Array.isArray(notifications) ? notifications.filter(n => !n.leida).length : 0;
 
   // Navegar según si está autenticado
   let navLinks = '';
@@ -93,14 +93,17 @@ document.addEventListener('click', (e) => {
   }
   if (notifBtn) {
     const st = getState();
-    const items = Array.isArray(st.notifications)
+    const items = Array.isArray(st.notifications) && st.notifications.length > 0
       ? st.notifications.map(n => `
         <div class="notif-item">
-          <div style="display:flex;justify-content:space-between;">
-            <strong>${n.title}</strong>
-            ${!n.read ? `<button class="btn small" data-read="${n.id}">Leer</button>` : ''}
+          <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+            <div style="flex:1;">
+              <strong>${n.titulo || 'Notificación'}</strong>
+              <div class="muted" style="font-size:0.85rem;margin-top:4px;">${n.tipo} • ${new Date(n.fecha_creacion).toLocaleString('es-CO')}</div>
+              <div style="font-size:0.9rem;margin-top:6px;color:var(--muted-foreground);">${n.descripcion || 'Sin detalles'}</div>
+            </div>
+            ${!n.leida ? `<button class="btn small" data-read="${n.idNotificacion}">Marcar leída</button>` : ''}
           </div>
-          <div class="muted">${n.type} • ${new Date(n.date).toLocaleString()}</div>
         </div>`).join('')
       : '<div class="notif-item muted">Sin notificaciones</div>';
     if (notifDd) { notifDd.innerHTML = items; notifDd.classList.toggle('open'); }
@@ -114,10 +117,24 @@ document.addEventListener('click', (e) => {
   if (readBtn) {
     const id = readBtn.getAttribute('data-read');
     const st = getState();
-    const i = Array.isArray(st.notifications) ? st.notifications.findIndex(n => n.id === id) : -1;
+    const i = Array.isArray(st.notifications) ? st.notifications.findIndex(n => n.idNotificacion === Number(id)) : -1;
     if (i >= 0) {
-      st.notifications[i].read = true;
+      st.notifications[i].leida = true;
       setState(st);
+      readBtn.style.display = 'none';
+      
+      // Actualizar el badge de notificaciones no leídas
+      const unread = Array.isArray(st.notifications) ? st.notifications.filter(n => !n.leida).length : 0;
+      const notifCount = document.getElementById('notif-count');
+      if (notifCount) {
+        if (unread > 0) {
+          notifCount.textContent = unread;
+          notifCount.style.display = 'inline-block';
+        } else {
+          notifCount.textContent = '';
+          notifCount.style.display = 'none';
+        }
+      }
     }
   }
 });

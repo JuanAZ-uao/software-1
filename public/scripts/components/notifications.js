@@ -11,6 +11,35 @@ import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
 
 let unreadCount = 0;
+let notificationRefreshInterval = null;
+
+/**
+ * Inicia el auto-refresh de notificaciones cada 10 segundos
+ */
+export function startNotificationRefresh() {
+  if (notificationRefreshInterval) return; // Ya está corriendo
+  
+  notificationRefreshInterval = setInterval(async () => {
+    try {
+      await loadNotifications();
+    } catch (err) {
+      console.error('Auto-refresh error:', err);
+    }
+  }, 10000); // Cada 10 segundos
+  
+  console.log('📱 Notificaciones auto-refresh iniciado');
+}
+
+/**
+ * Detiene el auto-refresh de notificaciones
+ */
+export function stopNotificationRefresh() {
+  if (notificationRefreshInterval) {
+    clearInterval(notificationRefreshInterval);
+    notificationRefreshInterval = null;
+    console.log('📱 Notificaciones auto-refresh detenido');
+  }
+}
 
 /**
  * Obtiene el token JWT del localStorage
@@ -43,14 +72,23 @@ async function fetchWithAuth(url, options = {}) {
  */
 export async function loadNotifications() {
   try {
+    console.log('📲 Cargando notificaciones...');
     const res = await fetchWithAuth('/api/notifications');
     
     if (!res.ok) {
-      console.error('Error loading notifications:', res.status);
+      console.error('❌ Error loading notifications:', res.status);
       return [];
     }
     
     const notificaciones = await res.json();
+    console.log(`✅ ${notificaciones.length} notificaciones cargadas`);
+    
+    if (notificaciones.length > 0) {
+      notificaciones.forEach(n => {
+        console.log(`  • ${n.titulo} (${n.tipo}) - ${n.descripcion?.substring(0, 50)}...`);
+      });
+    }
+    
     const st = getState();
     st.notifications = notificaciones;
     setState(st);
@@ -61,7 +99,7 @@ export async function loadNotifications() {
     
     return notificaciones;
   } catch (err) {
-    console.error('Error fetching notifications:', err);
+    console.error('❌ Error fetching notifications:', err);
     return [];
   }
 }
@@ -143,19 +181,22 @@ export function renderNotifications(){
       'rechazado': '✗'
     };
     
+    const titulo = n.titulo || `Evento ${n.tipo}`;
+    const descripcion = n.descripcion || `Evento ID: ${n.idEvento}`;
+    
     return `
       <div class="notification-item ${n.leida ? 'read' : 'unread'}" data-id="${n.idNotificacion}">
         <div style="display:flex; gap:12px; align-items:flex-start;">
           <div style="flex:1;">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-              <strong>${n.titulo}</strong>
+              <strong>${titulo}</strong>
               <span style="background:${tipoColor[n.tipo] || '#6b7280'}; color:white; padding:4px 8px; border-radius:4px; font-size:0.75rem; font-weight:600;">
                 ${tipoEmoji[n.tipo] || '•'} ${n.tipo}
               </span>
               ${!n.leida ? '<span style="background:var(--primary); width:8px; height:8px; border-radius:50%;"></span>' : ''}
             </div>
             <p style="margin:0 0 8px 0; color:var(--muted-foreground); font-size:0.95rem;">
-              ${n.descripcion || 'Sin descripción adicional'}
+              ${descripcion}
             </p>
             <small style="color:var(--muted-foreground);">
               ${fecha}
@@ -175,9 +216,12 @@ export function renderNotifications(){
     <div class="card">
       <div class="card-head">
         <strong>Notificaciones</strong>
-        <small style="margin-left:auto; color:var(--muted-foreground);">
-          ${notifications.filter(n => !n.leida).length} sin leer
-        </small>
+        <div style="display: flex; gap: 12px; margin-left: auto; align-items: center;">
+          <small style="color:var(--muted-foreground);">
+            ${notifications.filter(n => !n.leida).length} sin leer
+          </small>
+          <button id="refreshNotifications" class="btn small secondary" style="margin-left: 8px;">🔄 Recargar</button>
+        </div>
       </div>
       <div class="card-body" style="padding:0;">
         <div style="max-height:600px; overflow-y:auto;">
@@ -192,6 +236,17 @@ export function renderNotifications(){
  * Listener global para marcar notificaciones como leídas o eliminar
  */
 document.addEventListener('click', async (e) => {
+  // Botón de recarga
+  const refreshBtn = e.target.closest('#refreshNotifications');
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = '⏳ Recargando...';
+    await loadNotifications();
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = '🔄 Recargar';
+    return;
+  }
+
   // Marcar como leída
   const markBtn = e.target.closest('.mark-read-btn');
   if (markBtn) {

@@ -2,6 +2,7 @@
 import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
 import { qs, toast, formatDate } from '../utils/helpers.js';
+import { loadNotifications } from './notifications.js';
 
 // Bandera para evitar agregar listeners múltiples veces
 let dashboardSecretariaEventsBindings = false;
@@ -829,6 +830,13 @@ async function submitEvaluation(form) {
       toast(mensaje, 'success');
 
       await loadEventosForSecretaria();
+      
+      // Recargar notificaciones para reflejar cambios
+      try {
+        await loadNotifications();
+      } catch (err) {
+        console.error('Error reloading notifications:', err);
+      }
 
       const st = getState();
       const eventos = Array.isArray(st.events) ? st.events : [];

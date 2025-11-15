@@ -16,18 +16,17 @@ export async function createNotification(idUsuario, idEvento, tipo, titulo, desc
       VALUES (?, ?, ?, ?, ?, FALSE)
     `;
     const [result] = await pool.query(query, [idUsuario, idEvento, tipo, titulo, descripcion]);
-    return {
-      idNotificacion: result.insertId,
-      idUsuario,
-      idEvento,
-      tipo,
-      titulo,
-      descripcion,
-      leida: false,
-      fecha_creacion: new Date().toISOString()
-    };
+    
+    // Obtener la notificación que acabamos de insertar
+    const [[notificacion]] = await pool.query(
+      `SELECT * FROM notificacion WHERE idNotificacion = ?`,
+      [result.insertId]
+    );
+    
+    console.log(`✅ Notificación creada en BD: ${JSON.stringify(notificacion)}`);
+    return notificacion;
   } catch (err) {
-    console.error('Error creating notification:', err);
+    console.error('❌ Error creating notification:', err);
     throw err;
   }
 }
