@@ -111,7 +111,7 @@ export function renderMyEvents() {
       </div>
     </div>
 
-    <div id="eventEditModal" class="modal" style="display:none;">
+    <div id="eventEditModal" class="modal">
       <div class="sheet" style="max-width:980px;">
         <div class="head">
           <strong>Editar Evento</strong>
@@ -208,7 +208,7 @@ export function bindMyEventsListeners() {
   document.addEventListener('click', async (e) => {
     if (e.target?.id === 'closeEditModal' || e.target?.id === 'evtEditCancelBtn') {
       const modal = document.getElementById('eventEditModal');
-      if (modal) modal.style.display = 'none';
+      if (modal) modal.classList.remove('open');
       return;
     }
 
@@ -591,7 +591,7 @@ async function openEventEditModal(id) {
 
     if (avalFileInput) avalFileInput.value = '';
 
-    modal.style.display = 'block';
+    modal.classList.add('open');
     setTimeout(() => form.querySelector('[name="nombre"]')?.focus(), 100);
   } catch (err) {
     console.error('Error cargando evento (edit modal):', err);
@@ -746,7 +746,7 @@ async function submitEditedEvent(form) {
     setState({ ...st, events: evs });
 
     const modal = document.getElementById('eventEditModal');
-    if (modal) modal.style.display = 'none';
+    if (modal) modal.classList.remove('open');
   } catch (err) {
     if (err.message !== 'validation') console.error('submitEditedEvent error:', err);
     toast(err.message || 'Error actualizando evento', 'error');
