@@ -33,7 +33,7 @@ export function renderProfile(){
           <form id="profileForm" class="flex-col gap-12">
             <div><label class="label">Nombre</label><input class="input" name="nombre" value="${u.nombre || ''}" required></div>
             <div><label class="label">Apellidos</label><input class="input" name="apellidos" value="${u.apellidos || ''}" required></div>
-            <div><label class="label">Correo electrónico</label><input class="input" name="email" type="email" value="${u.email || ''}" readonly style="background-color: #f5f5f5; cursor: not-allowed;"></div>
+            <div><label class="label">Correo electrónico</label><input class="input" name="email" type="email" value="${u.email || ''}" required></div>
             <div><label class="label">Teléfono</label><input class="input" name="telefono" type="tel" value="${u.telefono || ''}" pattern="[0-9]{10}" title="Debe contener exactamente 10 dígitos" required></div>
             <button type="submit" class="btn primary" id="saveProfileBtn">Guardar cambios</button>
           </form>
@@ -65,9 +65,13 @@ export function renderProfile(){
  */
 async function updateProfile(profileData) {
   try {
-    const response = await fetch('/api/users/profile/update', {
+    const token = (getCurrentUser && getCurrentUser().token) || localStorage.getItem('uc_auth_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch('/api/usuarios/me', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(profileData)
     });
 
@@ -75,14 +79,19 @@ async function updateProfile(profileData) {
     
     if (result.success) {
       // Actualizar localStorage con los nuevos datos
-      const currentAuth = JSON.parse(localStorage.getItem('uc_auth'));
+      // Update stored auth user (keep token if present)
+      const currentAuth = JSON.parse(localStorage.getItem('uc_auth') || 'null') || {};
       const updatedAuth = {
         ...currentAuth,
-        name: `${result.user.nombre} ${result.user.apellidos}`,
+        id: result.user.id,
         nombre: result.user.nombre,
         apellidos: result.user.apellidos,
-        telefono: result.user.telefono
+        email: result.user.email,
+        telefono: result.user.telefono,
+        name: `${result.user.nombre} ${result.user.apellidos}`
       };
+      // Preserve existing token
+      if (currentAuth.token) updatedAuth.token = currentAuth.token;
       localStorage.setItem('uc_auth', JSON.stringify(updatedAuth));
       
       // Actualizar la vista inmediatamente sin recargar toda la página

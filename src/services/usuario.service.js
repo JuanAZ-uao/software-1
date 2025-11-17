@@ -12,6 +12,11 @@ export async function obtenerUsuarioPorId(id, conn) {
   return await repo.obtenerPorId(id, conn);
 }
 
+export async function actualizarUsuario(idUsuario, payload, conn) {
+  // payload may contain nombre, apellidos, email, telefono
+  return await repo.updateUsuario(idUsuario, payload, conn);
+}
+
 export async function esSecretaria(idUsuario, conn) {
   return await repo.esSecretariaPorId(idUsuario, conn);
 }

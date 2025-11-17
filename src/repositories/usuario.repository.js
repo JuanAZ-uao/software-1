@@ -49,6 +49,27 @@ export async function obtenerPorId(id, conn) {
   return rows[0] || null;
 }
 
+export async function updateUsuario(idUsuario, payload, conn) {
+  const connection = conn || pool;
+  const fields = [];
+  const params = [];
+
+  if (typeof payload.nombre !== 'undefined') { fields.push('nombre = ?'); params.push(payload.nombre); }
+  if (typeof payload.apellidos !== 'undefined') { fields.push('apellidos = ?'); params.push(payload.apellidos); }
+  if (typeof payload.email !== 'undefined') { fields.push('email = ?'); params.push(payload.email); }
+  if (typeof payload.telefono !== 'undefined') { fields.push('telefono = ?'); params.push(payload.telefono); }
+
+  if (fields.length === 0) return null;
+
+  const sql = `UPDATE usuario SET ${fields.join(', ')} WHERE idUsuario = ?`;
+  params.push(idUsuario);
+  const [result] = await connection.query(sql, params);
+
+  if (result.affectedRows === 0) return null;
+
+  return await obtenerPorId(idUsuario, connection);
+}
+
 export async function esSecretariaPorId(idUsuario, conn) {
   const connection = conn || pool;
   const [rows] = await connection.query('SELECT 1 FROM secretariaAcademica WHERE idUsuario = ? LIMIT 1', [idUsuario]);
