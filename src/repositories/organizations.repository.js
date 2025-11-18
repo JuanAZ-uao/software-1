@@ -17,11 +17,12 @@ export async function findAll() {
 export async function insert(data, userId) {
   const [result] = await pool.query(
     `INSERT INTO organizacion 
-      (nombre, representanteLegal, ubicacion, direccion, ciudad, sectorEconomico, actividadPrincipal, telefono, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (nombre, representanteLegal, nit, ubicacion, direccion, ciudad, sectorEconomico, actividadPrincipal, telefono, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.nombre,
       data.representanteLegal,
+      data.nit || null,
       data.ubicacion || null,
       data.direccion || null,
       data.ciudad || null,
@@ -37,6 +38,7 @@ export async function insert(data, userId) {
     idOrganizacion: result.insertId,
     nombre: data.nombre,
     representanteLegal: data.representanteLegal,
+    nit: data.nit || null,
     ubicacion: data.ubicacion || null,
     direccion: data.direccion || null,
     ciudad: data.ciudad || null,
@@ -50,11 +52,12 @@ export async function insert(data, userId) {
 export async function updateById(id, data) {
   await pool.query(
     `UPDATE organizacion SET
-      nombre = ?, representanteLegal = ?, ubicacion = ?, direccion = ?, ciudad = ?, sectorEconomico = ?, actividadPrincipal = ?, telefono = ?
+      nombre = ?, representanteLegal = ?, nit = ?, ubicacion = ?, direccion = ?, ciudad = ?, sectorEconomico = ?, actividadPrincipal = ?, telefono = ?
      WHERE idOrganizacion = ?`,
     [
       data.nombre,
       data.representanteLegal,
+      data.nit || null,
       data.ubicacion || null,
       data.direccion || null,
       data.ciudad || null,

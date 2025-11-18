@@ -170,7 +170,7 @@ export async function createEventWithOrgs({ evento, tipoAval, uploaderId, organi
           idOrganizacion: orgId,
           idEvento,
           participante: org.participante ?? null,
-          esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'),
+          esRepresentanteLegal: org.esRepresentanteLegal === 'si' ? 'si' : 'no',
           certificadoParticipacion: certPath
         }, conn);
       }

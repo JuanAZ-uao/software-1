@@ -272,9 +272,9 @@ export async function getAllEventsWithDetails() {
       const idOrg = assoc.idOrganizacion || assoc.organizacionId || assoc.org_id || assoc.id_organizacion || assoc.idOrg || assoc.id;
       if (!idOrg) return { rawAssoc: assoc };
 
-      const org = await singleRow('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal FROM organizacion WHERE idOrganizacion = ? LIMIT 1', [idOrg])
-        || await singleRow('SELECT id, nombre, sectorEconomico, representanteLegal FROM organizacion WHERE id = ? LIMIT 1', [idOrg])
-        || await singleRow('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal FROM organization WHERE idOrganizacion = ? LIMIT 1', [idOrg])
+      const org = await singleRow('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal, nit FROM organizacion WHERE idOrganizacion = ? LIMIT 1', [idOrg])
+        || await singleRow('SELECT id, nombre, sectorEconomico, representanteLegal, nit FROM organizacion WHERE id = ? LIMIT 1', [idOrg])
+        || await singleRow('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal, nit FROM organization WHERE idOrganizacion = ? LIMIT 1', [idOrg])
         || null;
 
       const participante = assoc.participante || assoc.nombreEncargado || assoc.encargado || assoc.nombreParticipante || null;
@@ -424,10 +424,10 @@ export async function findByIdWithDetails(idEvento) {
     }
     let org = null;
     try {
-      const [orgRows] = await pool.query('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal FROM organizacion WHERE idOrganizacion = ? LIMIT 1', [idOrg]);
+      const [orgRows] = await pool.query('SELECT idOrganizacion, nombre, sectorEconomico, representanteLegal, nit FROM organizacion WHERE idOrganizacion = ? LIMIT 1', [idOrg]);
       if (orgRows && orgRows.length) org = orgRows[0];
       else {
-        const [orgAlt] = await pool.query('SELECT id, nombre, sectorEconomico, representanteLegal FROM organizacion WHERE id = ? LIMIT 1', [idOrg]);
+        const [orgAlt] = await pool.query('SELECT id, nombre, sectorEconomico, representanteLegal, nit FROM organizacion WHERE id = ? LIMIT 1', [idOrg]);
         if (orgAlt && orgAlt.length) org = orgAlt[0];
       }
     } catch (err) {

@@ -311,9 +311,12 @@ export function bindMyEventsListeners() {
 
   document.addEventListener('input', (e) => {
     if (e.target?.id === 'editOrgFilter') {
-      const q = e.target.value.toLowerCase();
+      const q = (e.target.value || '').toLowerCase().trim();
       document.querySelectorAll('#editOrgList .org-item').forEach(div => {
-        div.style.display = div.textContent.toLowerCase().includes(q) ? '' : 'none';
+        const textMatch = div.textContent.toLowerCase().includes(q);
+        const nitAttr = (div.getAttribute('data-nit') || '').toLowerCase();
+        const nitMatch = nitAttr && nitAttr.includes(q);
+        div.style.display = (q === '' || textMatch || nitMatch) ? '' : 'none';
       });
       return;
     }
@@ -482,6 +485,7 @@ async function openEventEditModal(id) {
     orgList.innerHTML = organizations.length ? organizations.map(o => {
       const oid = o.idOrganizacion || o.id;
       const name = escapeHtml(o.nombre || '');
+      const nitVal = escapeHtml(o.nit || '');
       const sector = escapeHtml(o.sectorEconomico || o.sector || '');
       const lookup = assocMap[String(oid)];
       const checked = !!lookup;
@@ -504,12 +508,13 @@ async function openEventEditModal(id) {
       const fileInputHtml = `<div style="margin-top:6px;"><label style="font-size:0.9em;">Reemplazar certificado (PDF)</label><input type="file" accept="application/pdf" class="org-cert" data-org="${escapeHtml(oid)}" /></div>`;
 
       return `
-        <div class="org-item" data-org-id="${escapeHtml(oid)}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
+        <div class="org-item" data-org-id="${escapeHtml(oid)}" data-nit="${nitVal}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
           <div style="display:flex; gap:12px; align-items:flex-start;">
             <div style="flex:1;">
               <div style="display:flex; align-items:center; gap:8px;">
                 <input type="checkbox" class="org-select" name="organizaciones[]" value="${escapeHtml(oid)}" ${checked ? 'checked' : ''} />
                 <strong>${name}</strong>
+                ${nitVal ? `<small style="margin-left:8px; color:#666;">NIT: ${nitVal}</small>` : ''}
                 <small style="margin-left:8px; color:#666;">— ${sector}</small>
               </div>
 

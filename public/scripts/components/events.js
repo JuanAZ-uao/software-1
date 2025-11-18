@@ -148,16 +148,17 @@ export async function renderEvents() {
   const orgListHtml = organizations.map(o => {
     const id = escapeHtml(o.idOrganizacion || o.id || '');
     const name = escapeHtml(o.nombre || '');
+    const nitVal = escapeHtml(o.nit || '');
     const sector = escapeHtml(o.sectorEconomico || o.sector || 'Sin sector');
     const createdBy = String(o.created_by || o.createdBy || '');
     const currentUser = getCurrentUser();
     const canEdit = currentUser && String(currentUser.id) === createdBy;
     return `
-      <div class="org-item" data-org-id="${id}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
+      <div class="org-item" data-org-id="${id}" data-nit="${nitVal}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
         <label style="display:flex; align-items:flex-start; gap:8px;">
           <input type="checkbox" class="org-select" name="organizaciones[]" value="${id}" />
           <div style="flex:1;">
-            <strong>${name}</strong> <small>— ${sector}</small>
+            <strong>${name}</strong> ${nitVal ? `<small style="margin-left:8px; color:#666;">NIT: ${nitVal}</small>` : ''} <small>— ${sector}</small>
             <div style="margin-top:6px;">
               <label style="margin-right:8px;"><input type="checkbox" class="org-rep" data-org="${id}" /> Representante legal</label>
               <input class="input org-encargado" data-org="${id}" placeholder="Nombre encargado (si no es representante)" style="display:none; width:60%;" />
@@ -315,16 +316,17 @@ function rebuildOrgList(orgs) {
   const html = Array.isArray(orgs) && orgs.length ? orgs.map(o => {
     const id = escapeHtml(o.idOrganizacion || o.id || '');
     const name = escapeHtml(o.nombre || '');
+    const nitVal = escapeHtml(o.nit || '');
     const sector = escapeHtml(o.sectorEconomico || o.sector || 'Sin sector');
     const createdBy = String(o.created_by || o.createdBy || '');
     const currentUser = getCurrentUser();
     const canEdit = currentUser && String(currentUser.id) === createdBy;
     return `
-      <div class="org-item" data-org-id="${id}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
+      <div class="org-item" data-org-id="${id}" data-nit="${nitVal}" style="padding:6px; border-bottom:1px solid #f0f0f0;">
         <label style="display:flex; align-items:flex-start; gap:8px;">
           <input type="checkbox" class="org-select" name="organizaciones[]" value="${id}" />
           <div style="flex:1;">
-            <strong>${name}</strong> <small>— ${sector}</small>
+            <strong>${name}</strong> ${nitVal ? `<small style="margin-left:8px; color:#666;">NIT: ${nitVal}</small>` : ''} <small>— ${sector}</small>
             <div style="margin-top:6px;">
               <label style="margin-right:8px;"><input type="checkbox" class="org-rep" data-org="${id}" /> Representante legal</label>
               <input class="input org-encargado" data-org="${id}" placeholder="Nombre encargado" style="display:none; width:60%;" />
@@ -430,6 +432,9 @@ async function handleEventFormSubmit(e) {
       const selected = Array.from(evtForm.querySelectorAll('#orgSelectList input.org-select:checked'));
       if (selected.length === 0) { toast('Seleccione al menos una organización participante', 'error'); throw new Error('validation'); }
 
+
+      // Obtener organizaciones actualizadas del estado global
+      const orgsState = Array.isArray(getState().organizations) ? getState().organizations : [];
       for (const cb of selected) {
         const orgId = cb.value;
         const repInput = document.querySelector(`.org-rep[data-org="${orgId}"]`);
@@ -438,10 +443,17 @@ async function handleEventFormSubmit(e) {
         const encargadoVal = encargadoInput ? (encargadoInput.value || '') : '';
         if (!isRep && !encargadoVal) { toast('Ingrese encargado para una organización sin representante legal', 'error'); throw new Error('validation'); }
 
-        const participante = isRep ? null : encargadoVal;
+        // Si es representante legal, participante debe ser el nombre del representante legal de la organización
+        let participante;
+        if (isRep) {
+          const org = orgsState.find(o => String(o.idOrganizacion || o.id) === String(orgId));
+          participante = org && org.representanteLegal ? org.representanteLegal : '';
+        } else {
+          participante = encargadoVal;
+        }
         organizacionesPayload.push({
           idOrganizacion: orgId,
-          representanteLegal: isRep ? 'si' : 'no',
+          esRepresentanteLegal: isRep ? 'si' : 'no',
           participante: participante
         });
 
@@ -460,6 +472,7 @@ async function handleEventFormSubmit(e) {
         sendForm.append('certificadoParticipacion', certFileGeneral);
       }
 
+      console.log('DEBUG organizacionesPayload:', JSON.stringify(organizacionesPayload));
       sendForm.append('organizaciones', JSON.stringify(organizacionesPayload));
     }
 
@@ -508,10 +521,13 @@ function bindEventListenersInner() {
 
   document.addEventListener('input', (e) => {
     if (e.target?.id === 'orgFilter') {
-      const q = e.target.value.toLowerCase();
-      document.querySelectorAll('#orgSelectList .org-item').forEach(div => {
-        div.style.display = div.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
+        const q = (e.target.value || '').toLowerCase().trim();
+        document.querySelectorAll('#orgSelectList .org-item').forEach(div => {
+          const textMatch = div.textContent.toLowerCase().includes(q);
+          const nitAttr = (div.getAttribute('data-nit') || '').toLowerCase();
+          const nitMatch = nitAttr && nitAttr.includes(q);
+          div.style.display = (q === '' || textMatch || nitMatch) ? '' : 'none';
+        });
       return;
     }
     if (e.target?.id === 'participantFilter') {
@@ -673,11 +689,13 @@ function openOrgInlineEditor(id) {
   const ciudad = form.querySelector('input[name="ciudad"]');
   const actividad = form.querySelector('input[name="actividadPrincipal"]');
   const telefono = form.querySelector('input[name="telefono"]');
+  const nit = form.querySelector('input[name="nit"]');
 
   if (!id) {
     inputId.value = '';
     name.value = '';
     rep.value = '';
+    if (nit) nit.value = '';
     if (sector) sector.value = '';
     if (ubic) ubic.value = '';
     if (dir) dir.value = '';
@@ -698,6 +716,7 @@ function openOrgInlineEditor(id) {
 
   inputId.value = org.idOrganizacion || org.id || '';
   name.value = org.nombre || '';
+  if (nit) nit.value = org.nit || '';
   rep.value = org.representanteLegal || '';
   if (sector) sector.value = org.sectorEconomico || org.sector || '';
   if (ubic) ubic.value = org.ubicacion || '';
@@ -724,6 +743,12 @@ function ensureOrgInlineEditorExists() {
             <input type="hidden" name="id" />
             <div><label class="label">Nombre</label><input name="nombre" class="input" /></div>
             <div><label class="label">Representante legal</label><input name="representanteLegal" class="input" /></div>
+            <div><label class="label">NIT</label><input name="nit" class="input" /></div>
+            <div><label class="label">Ubicación</label><input name="ubicacion" class="input" /></div>
+            <div><label class="label">Dirección</label><input name="direccion" class="input" /></div>
+            <div><label class="label">Ciudad</label><input name="ciudad" class="input" /></div>
+            <div><label class="label">Actividad Principal</label><input name="actividadPrincipal" class="input" /></div>
+            <div><label class="label">Teléfono</label><input name="telefono" class="input" /></div>
             <div><label class="label">Sector económico</label>
               <select name="sectorEconomico" class="select">
                 <option value="">- Seleccionar -</option>

@@ -282,3 +282,10 @@ ADD COLUMN created_by INT NOT NULL AFTER representanteLegal;
 
 ALTER TABLE organizacion
 ADD CONSTRAINT fk_organizacion_creator FOREIGN KEY (created_by) REFERENCES usuario(idUsuario);
+
+-- Agregar columna NIT (identificación tributaria)
+ALTER TABLE organizacion
+    ADD COLUMN nit VARCHAR(50) NULL AFTER representanteLegal;
+
+-- Índice para búsqueda rápida por NIT
+CREATE INDEX idx_organizacion_nit ON organizacion(nit);
