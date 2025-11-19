@@ -6,7 +6,6 @@ const privateRoutes = [
   'organizations', 
   'events',
   'users',
-  'calendar',
   'notifications',
   'settings'
 ];

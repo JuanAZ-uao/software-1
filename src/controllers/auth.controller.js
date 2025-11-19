@@ -73,6 +73,7 @@ export const loginUser = async (req, res) => {
 export const registerUser = async (req, res) => {
     const userData = req.body;
     try {
+        console.log('🔔 registerUser payload:', userData);
         const newUser = await registerUserService(userData);
         res.status(201).json({
             success: true,

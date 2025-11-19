@@ -126,10 +126,9 @@ export async function renderEvents() {
       <td>${escapeHtml(e.nombre || '')}</td>
       <td>${escapeHtml(e.tipo || '')}</td>
       <td>${escapeHtml(e.fecha || '')} ${escapeHtml(e.hora || '')}</td>
-      <td>${escapeHtml(e.ubicacion || '')}</td>
       <td></td>
     </tr>
-  `).join('') : '<tr><td colspan="5">No hay eventos</td></tr>';
+  `).join('') : '<tr><td colspan="4">No hay eventos</td></tr>';
 
   const instCheckboxesHtml = installations.map(i => {
     const id = escapeHtml(i.idInstalacion || i.id || '');
@@ -211,8 +210,8 @@ export async function renderEvents() {
     <div class="grid">
       <div class="card col-8 col-12">
         <div class="card-body table-wrap">
-          <table class="table" id="eventsTable">
-            <thead><tr><th>Nombre</th><th>Tipo</th><th>Fecha</th><th>Ubicación</th><th></th></tr></thead>
+            <table class="table" id="eventsTable">
+            <thead><tr><th>Nombre</th><th>Tipo</th><th>Fecha</th><th></th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -256,12 +255,7 @@ export async function renderEvents() {
               </div>
             </div>
 
-            <div><label class="label">Ubicación / descripción corta</label><input class="input" name="ubicacion" placeholder="Salón, dirección, etc."></div>
-
-            <div>
-              <label class="label">Descripción (opcional)</label>
-              <textarea class="textarea" name="descripcion"></textarea>
-            </div>
+            <!-- Nota: los campos 'ubicacion' y 'descripcion' fueron removidos porque no se guardan en la base -->
 
             <div>
               <label><input type="checkbox" id="evtHasOrg" name="hasOrganization"> Participa organización externa</label>
@@ -408,9 +402,8 @@ async function handleEventFormSubmit(e) {
       fecha: raw.fecha,
       hora: raw.hora,
       horaFin: raw.horaFin,
-      ubicacion: raw.ubicacion || '',
       capacidad: capacidadNum,
-      descripcion: raw.descripcion || ''
+      // descripción/ubicación no se envían porque no se persisten en BD
     };
 
     sendForm.append('evento', JSON.stringify(payloadEvento));
@@ -501,7 +494,6 @@ async function handleEventFormSubmit(e) {
             <td>${escapeHtml(ev.nombre || '')}</td>
             <td>${escapeHtml(ev.tipo || '')}</td>
             <td>${escapeHtml(ev.fecha || '')} ${escapeHtml(ev.hora || '')}</td>
-            <td>${escapeHtml(ev.ubicacion || '')}</td>
             <td></td>
           </tr>
         `).join('');
@@ -621,7 +613,10 @@ function bindEventListenersInner() {
         const orgs = Array.isArray(st.organizations) ? st.organizations.slice() : [];
         if (editingId) {
           const i = orgs.findIndex(o => String(o.idOrganizacion||o.id) === String(editingId));
-          if (i >= 0) orgs[i] = data;
+          if (i >= 0) {
+            // Merge returned data with existing entry so we don't lose fields like created_by
+            orgs[i] = { ...orgs[i], ...data };
+          }
         } else orgs.unshift(data);
         setState({ ...st, organizations: orgs });
         rebuildOrgList(orgs);

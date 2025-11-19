@@ -132,9 +132,26 @@ export async function getSecretariasByFacultad(idFacultad) {
       WHERE idFacultad = ?
     `;
     const [rows] = await pool.query(query, [idFacultad]);
-    return rows.map(r => r.idUsuario) || [];
+    // Normalize to numbers and dedupe
+    const ids = (rows || []).map(r => Number(r.idUsuario)).filter(n => Number.isFinite(n));
+    return Array.from(new Set(ids));
   } catch (err) {
     console.error('Error getting secretarias by facultad:', err);
+    throw err;
+  }
+}
+
+/**
+ * Obtiene todas las secretarias académicas registradas
+ * @returns {Promise<Array>} Lista de IDs de usuario
+ */
+export async function getAllSecretarias() {
+  try {
+    const query = `SELECT idUsuario FROM secretariaAcademica`;
+    const [rows] = await pool.query(query);
+    return rows.map(r => r.idUsuario) || [];
+  } catch (err) {
+    console.error('Error getting all secretarias:', err);
     throw err;
   }
 }

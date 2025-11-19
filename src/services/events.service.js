@@ -38,11 +38,10 @@ export async function sendEventForReview({ idEvento }) {
     // (en paralelo, no bloqueamos la respuesta)
     try {
       const idFacultad = await repo.getFacultadByEvento(idEvento);
-      if (idFacultad) {
-        notifSvc.notifySecretariasOnReview(idEvento, idFacultad).catch(err => {
-          console.error('Error notifying secretarias on review:', err);
-        });
-      }
+      // Siempre llamar al servicio de notificaciones: el servicio internamente hará fallback
+      notifSvc.notifySecretariasOnReview(idEvento, idFacultad).catch(err => {
+        console.error('Error notifying secretarias on review:', err);
+      });
     } catch (err) {
       console.error('Error in sendEventForReview notification:', err);
       // No throw, la actualización del evento ya se hizo
@@ -316,22 +315,37 @@ export async function updateEventWithOrgs({ id, evento, tipoAval, uploaderId, or
     }
 
     // 4) Organizaciones
-    if (Array.isArray(organizaciones) && organizaciones.length) {
-      for (const org of organizaciones) {
-        const orgId = org.idOrganizacion;
-        if (!orgId) throw Object.assign(new Error('idOrganizacion requerido'), { status: 400 });
-        const certFile = files?.orgFiles?.[orgId] || null;
-        const deleteCert = files?.deleteCerts?.[orgId];
-        if (certFile) {
-          const certPath = `/uploads/${certFile.filename}`;
-          await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: certPath }, conn);
-        } else if (deleteCert) {
-          await conn.query('UPDATE organizacion_evento SET certificadoParticipacion = NULL WHERE idOrganizacion = ? AND idEvento = ?', [orgId, id]);
-          await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: null }, conn);
-        } else {
-          const existing = typeof orgEventRepo.findById === 'function' ? await orgEventRepo.findById(orgId, id, conn) : null;
-          const currentCert = existing?.certificadoParticipacion ?? null;
-          await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: currentCert }, conn);
+    if (Array.isArray(organizaciones)) {
+      // Upsert incoming organizations
+      const incomingOrgIds = new Set();
+      if (organizaciones.length) {
+        for (const org of organizaciones) {
+          const orgId = org.idOrganizacion;
+          if (!orgId) throw Object.assign(new Error('idOrganizacion requerido'), { status: 400 });
+          incomingOrgIds.add(String(orgId));
+          const certFile = files?.orgFiles?.[orgId] || null;
+          const deleteCert = files?.deleteCerts?.[orgId];
+          if (certFile) {
+            const certPath = `/uploads/${certFile.filename}`;
+            await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: certPath }, conn);
+          } else if (deleteCert) {
+            await conn.query('UPDATE organizacion_evento SET certificadoParticipacion = NULL WHERE idOrganizacion = ? AND idEvento = ?', [orgId, id]);
+            await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: null }, conn);
+          } else {
+            const existing = typeof orgEventRepo.findById === 'function' ? await orgEventRepo.findById(orgId, id, conn) : null;
+            const currentCert = existing?.certificadoParticipacion ?? null;
+            await orgEventRepo.upsert({ idOrganizacion: orgId, idEvento: id, participante: org.participante ?? null, esRepresentanteLegal: (org.esRepresentanteLegal ? 'si' : 'no'), certificadoParticipacion: currentCert }, conn);
+          }
+        }
+      }
+
+      // Remove any existing organization-event links that are not present in incomingOrgIds
+      // If incoming list is empty, this will remove all associations for the event.
+      const existingOrgs = await orgEventRepo.findByEvent(id, conn);
+      for (const ex of existingOrgs || []) {
+        const exId = String(ex.idOrganizacion);
+        if (!incomingOrgIds.has(exId)) {
+          await orgEventRepo.deleteByOrgEvent(exId, id, conn);
         }
       }
     }

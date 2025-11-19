@@ -9,7 +9,6 @@ import { renderProfile } from './components/profile.js';
 import { renderOrganizations } from './components/organizations.js';
 import { renderEvents } from './components/events.js';
 import { renderUsers } from './components/users.js';
-import { renderCalendar } from './components/calendar.js';
 import { renderNotifications, loadNotifications, getUnreadCount, startNotificationRefresh, stopNotificationRefresh } from './components/notifications.js';
 import { renderSettings } from './components/settings.js';
 import { renderAuthView, isAuthenticated, bindAuthEvents, handleResetPasswordPage, getCurrentUser, validateAuthentication } from './auth.js';
@@ -164,15 +163,21 @@ async function renderRoute(route) {
       break;
     
     case 'users': 
-      view = renderUsers(); 
+        if (st.user && st.user.tipo === 'secretaria') {
+          renderDashboardSecretaria();
+        } else {
+          view = await renderEvents(); 
+        }
       break;
     
-    case 'calendar': 
-      view = renderCalendar(); 
-      break;
-    
+    // 'calendar' route removed — feature deprecated
+        if (st.user && st.user.tipo === 'secretaria') {
+          renderDashboardSecretaria();
+        } else {
+          view = await renderMyEvents();
+        }
     case 'notifications': 
-      view = renderNotifications(); 
+      view = `<div id="notificationsContainer">${renderNotifications()}</div>`;
       break;
     
     case 'settings': 

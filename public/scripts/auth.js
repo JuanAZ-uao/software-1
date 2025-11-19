@@ -12,6 +12,7 @@
  */
 
 import { navigateTo } from './utils/router.js';
+import { toast } from './utils/helpers.js';
 
 // URL base de la API backend
 const API_BASE = 'http://localhost:3000/api';
@@ -21,7 +22,7 @@ const API_BASE = 'http://localhost:3000/api';
  * @returns {boolean}
  */
 export function isAuthenticated() {
-  return !!localStorage.getItem('uc_auth');
+  return !!sessionStorage.getItem('uc_auth');
 }
 
 /**
@@ -35,7 +36,7 @@ export async function validateAuthentication() {
   }
 
   try {
-    const token = getCurrentUser()?.token || localStorage.getItem('uc_auth_token');
+    const token = getCurrentUser()?.token || sessionStorage.getItem('uc_auth_token');
     
     const response = await fetch(`${API_BASE}/auth/verify`, {
       method: 'GET',
@@ -66,7 +67,7 @@ export async function validateAuthentication() {
  */
 export function getCurrentUser() {
   try {
-    return JSON.parse(localStorage.getItem('uc_auth') || 'null');
+    return JSON.parse(sessionStorage.getItem('uc_auth') || 'null');
   } catch {
     return null;
   }
@@ -76,9 +77,29 @@ export function getCurrentUser() {
  * Cierra la sesión del usuario y navega a home
  */
 export function logout() {
-  localStorage.removeItem('uc_auth');
-  // Forzar recarga completa para actualizar todo (header, rutas, etc.)
-  window.location.href = '/#home';
+  try {
+    sessionStorage.removeItem('uc_auth');
+    sessionStorage.removeItem('uc_auth_token');
+    sessionStorage.removeItem('uc_state');
+  } catch (e) {
+    // ignore
+  }
+
+  // Intentar navegar con el router SPA si está disponible, de lo contrario ajustar el hash
+  try {
+    if (typeof navigateTo === 'function') {
+      navigateTo('home');
+    } else {
+      window.location.hash = '#home';
+    }
+  } catch (e) {
+    window.location.hash = '#home';
+  }
+
+  // Disparar manualmente el evento de cambio de hash para forzar re-render
+  setTimeout(() => {
+    try { window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { window.location.reload(); }
+  }, 20);
 }
 
 /**
@@ -86,7 +107,7 @@ export function logout() {
  * @param {object} user
  */
 function setAuth(user) {
-  localStorage.setItem('uc_auth', JSON.stringify(user));
+  sessionStorage.setItem('uc_auth', JSON.stringify(user));
 }
 
 /**
@@ -134,7 +155,7 @@ async function login(email, password) {
     setAuth(data.user);
     // Guardar token JWT si está disponible
     if (data.token) {
-      localStorage.setItem('uc_auth_token', data.token);
+      sessionStorage.setItem('uc_auth_token', data.token);
     }
     showMessage('¡Bienvenido!', 'success');
     
@@ -161,7 +182,7 @@ async function login(email, password) {
       }, 50);
     }, 1000);
   } catch (error) {
-    showMessage(error.message, 'error');
+    toast(error.message || 'Error en el login', 'error');
   }
 }
 
@@ -185,7 +206,7 @@ async function register(userData) {
     }, 2000);
   } catch (error) {
     console.error('❌ Error en registro:', error);
-    showMessage(error.message, 'error');
+    toast(error.message || 'Error en el registro', 'error');
   }
 }
 
@@ -548,18 +569,39 @@ export function bindAuthEvents() {
   if (registerForm) {
     registerForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const formData = new FormData(e.target);
-      const userData = {
-        nombre: formData.get('nombre').trim(),
-        apellidos: formData.get('apellidos').trim(),
-        documento: formData.get('documento').trim(),
-        email: formData.get('email').trim(),
-        telefono: formData.get('telefono').trim(),
-        password: formData.get('password').trim(),
-        tipo: formData.get('tipo'),
-        programa: formData.get('programaSelect') === '__manual__' ? formData.get('programaManual') : formData.get('programa'),
-        facultad: formData.get('facultadSelect') === '__manual__' ? formData.get('facultadManual') : formData.get('facultad'),
-      };
+        const formData = new FormData(e.target);
+        // Read selects/inputs by id to avoid name mismatches
+        const tipo = formData.get('tipo');
+        const nombre = (formData.get('nombre') || '').trim();
+        const apellidos = (formData.get('apellidos') || '').trim();
+        const documento = (formData.get('documento') || '').trim();
+        const email = (formData.get('email') || '').trim();
+        const telefono = (formData.get('telefono') || '').trim();
+        const password = (formData.get('password') || '').trim();
+
+        // helper to read select + optional manual input
+        const readSelectOrManual = (selectId, manualInputId) => {
+          const sel = document.getElementById(selectId);
+          const manual = document.getElementById(manualInputId);
+          if (!sel) return '';
+          if (sel.value === '__manual__') {
+            return manual ? manual.value.trim() : '';
+          }
+          return sel.value;
+        };
+
+        const userData = {
+          nombre,
+          apellidos,
+          documento,
+          email,
+          telefono,
+          password,
+          tipo,
+          programa: readSelectOrManual('programaSelect', 'programaInput'),
+          facultad: readSelectOrManual('facultadSelect', 'facultadInput'),
+          unidad: readSelectOrManual('unidadSelect', 'unidadInput')
+        };
       if (!userData.nombre || !userData.apellidos || !userData.email || !userData.telefono || !userData.password || !userData.tipo) {
         showMessage('Por favor completa todos los campos', 'error');
         return;
@@ -787,6 +829,6 @@ if (isAuthenticated() && location.hash === '#login') {
     navigateTo('dashboard');
   } else {
     // Si el usuario no es válido, limpiar sesión
-    localStorage.removeItem('uc_auth');
+    sessionStorage.removeItem('uc_auth');
   }
 }

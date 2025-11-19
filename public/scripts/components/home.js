@@ -1,5 +1,6 @@
 import { isAuthenticated, getCurrentUser, logout } from '../auth.js';
 import { navigateTo } from '../utils/router.js';
+import { toast } from '../utils/helpers.js';
 
 /**
  * Imágenes predeterminadas por tipo de evento
@@ -187,11 +188,11 @@ function renderEventCard(evento) {
         <p class="event-description">${evento.descripcion || 'Evento sin descripción'}</p>
         <div class="event-footer">
           ${isAuthenticated() 
-            ? `
-              <button class="btn small primary" onclick="viewEventDetails(${evento.idEvento})">
-                Ver Detalles →
-              </button>
-            `
+              ? `
+                <button class="btn small primary" onclick="viewEventDetails(${evento.idEvento}, '${encodeURIComponent(image)}')">
+                  Ver Detalles →
+                </button>
+              `
             : `
               <button class="btn small secondary" onclick="window.location.hash='#login'">
                 Inicia sesión para ver más
@@ -253,8 +254,143 @@ async function loadApprovedEvents() {
 /**
  * Ver detalles de un evento (redirigir a componente de eventos)
  */
-window.viewEventDetails = function(idEvento) {
-  navigateTo(`events?id=${idEvento}`);
+// Render a limited details modal for public/home view (no avales/confidential)
+function renderLimitedEventModal(ev, imageUrl) {
+  // ensure we don't expose avales or confidential evaluation data
+  // dedupe instalaciones by id or name
+  const seenInst = new Set();
+  const instalacionesList = (ev.instalaciones || []).filter(i => {
+    const key = String(i.idInstalacion || i.id || i.nombre || '').trim();
+    if (!key) return false;
+    if (seenInst.has(key)) return false;
+    seenInst.add(key);
+    return true;
+  });
+
+  const instalacionesHtml = instalacionesList.map(i => `
+    <div class="detail-row">
+      <strong>${i.nombre || 'Instalación'}</strong>
+    </div>
+  `).join('');
+
+  const organizacionesHtml = (ev.organizaciones || []).map(o => `
+    <div class="detail-row">
+      <div><strong>${(o.organizacion && o.organizacion.nombre) || (o.association && o.association.nombre) || 'Organización'}</strong></div>
+      <div class="muted">Participante: ${o.participante || '—'}</div>
+      <div class="muted">Representante legal: ${o.esRepresentanteLegal ? 'Sí' : 'No'}</div>
+    </div>
+  `).join('');
+
+  const participantesHtml = (ev.participantes || []).map(p => `
+    <div class="detail-row">
+      <div><strong>${p.nombre || p.email || ('Usuario ' + (p.idUsuario || ''))}</strong></div>
+      <div class="muted">${p.email || ''} ${p.telefono ? '· ' + p.telefono : ''}</div>
+    </div>
+  `).join('');
+
+  const fecha = ev.fecha ? formatDate(ev.fecha) : '';
+  const hora = ev.hora ? formatTime(ev.hora) : '';
+  const horaFin = ev.horaFin ? formatTime(ev.horaFin) : '';
+
+  const modalHtml = `
+    <div id="eventDetailModal" class="modal open">
+      <div class="sheet">
+        <div class="head">
+          <div>
+            <div style="display:flex;align-items:center;gap:12px;">
+              ${imageUrl ? `<img src="${decodeURIComponent(imageUrl)}" alt="${ev.nombre || ''}" class="modal-image" onerror="this.style.display='none'">` : ''}
+              <div>
+                <h3 style="margin:0;font-size:1.25rem">🎫 ${ev.nombre || 'Detalle de evento'}</h3>
+                <div class="muted" style="font-size:0.95rem">📅 ${fecha}${hora ? ' · ' + hora + (horaFin ? ' - ' + horaFin : '') : ''}</div>
+              </div>
+            </div>
+          </div>
+          <div><button class="btn tertiary" id="closeEventDetail">Cerrar ✖</button></div>
+        </div>
+        <div class="body">
+          <p style="font-size:0.98rem;line-height:1.6;">${ev.descripcion || ''}</p>
+
+          <div class="detail-section" style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div>
+              <div class="section-title">🏟️ Instalaciones</div>
+              <div style="margin-top:8px">${instalacionesHtml || '<div class="muted">No hay instalaciones asociadas</div>'}</div>
+            </div>
+
+            <div>
+              <div class="section-title">🤝 Organizaciones</div>
+              <div style="margin-top:8px">${organizacionesHtml || '<div class="muted">No hay organizaciones asociadas</div>'}</div>
+            </div>
+          </div>
+
+          <div class="detail-section" style="margin-top:12px;">
+            <div class="section-title">👥 Participantes</div>
+            <div style="margin-top:8px">${participantesHtml || '<div class="muted">No hay participantes listados</div>'}</div>
+          </div>
+
+          <div class="detail-section" style="margin-top:12px;">
+            <div class="section-title">ℹ️ Detalles</div>
+            <div style="margin-top:8px">Capacidad del evento: <strong>${ev.capacidad != null ? ev.capacidad : '—'}</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Remove existing modal if present
+  const existing = document.getElementById('eventDetailModal');
+  if (existing) existing.remove();
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = modalHtml;
+  document.body.appendChild(wrapper.firstElementChild);
+
+  const closeBtn = document.getElementById('closeEventDetail');
+  if (closeBtn) closeBtn.addEventListener('click', () => {
+    const m = document.getElementById('eventDetailModal');
+    if (m) m.remove();
+  });
+  // Close on backdrop click
+  const modalEl = document.getElementById('eventDetailModal');
+  if (modalEl) {
+    modalEl.addEventListener('click', (ev) => {
+      if (ev.target === modalEl) modalEl.remove();
+    });
+  }
+
+  // Close on ESC
+  function escHandler(e) {
+    if (e.key === 'Escape') {
+      const m = document.getElementById('eventDetailModal');
+      if (m) m.remove();
+      document.removeEventListener('keydown', escHandler);
+    }
+  }
+  document.addEventListener('keydown', escHandler);
+}
+
+window.viewEventDetails = async function(idEvento, imageEncoded) {
+  try {
+    const res = await fetch(`/api/events/${idEvento}/details`);
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({ error: 'Error obteniendo evento' }));
+        console.error('Error fetching event details:', err);
+        toast(err.error || 'No se pudo cargar el detalle del evento', 'error');
+        return;
+      }
+
+    const ev = await res.json();
+
+    // Remove confidential properties if present
+    if (ev.avales) delete ev.avales;
+    if (ev.aval) delete ev.aval;
+    if (ev.evaluacion) delete ev.evaluacion;
+    if (ev.actaAprobacion) delete ev.actaAprobacion;
+
+    renderLimitedEventModal(ev, imageEncoded);
+  } catch (e) {
+    console.error('Error loading event detail:', e);
+    toast('Ocurrió un error cargando el detalle del evento', 'error');
+  }
 };
 
 /**

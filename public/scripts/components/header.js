@@ -1,11 +1,13 @@
 import { getCurrentUser, logout, isAuthenticated } from '../auth.js';
 import { getState, setState } from '../utils/state.js';
+import { toast } from '../utils/helpers.js';
 
 export function renderHeader() {
   const user = getCurrentUser();
   const isAuth = isAuthenticated();
-  const role = user?.role || 'Estudiante';
-  const isAdmin = role === 'Administrador';
+  const userTipo = user?.tipo || user?.role || 'usuario';
+  const isAdmin = userTipo === 'Administrador' || userTipo === 'admin';
+  const isSecretaria = userTipo === 'secretaria';
 
   const { notifications = [] } = getState();
   const unread = Array.isArray(notifications) ? notifications.filter(n => !n.leida).length : 0;
@@ -13,13 +15,20 @@ export function renderHeader() {
   // Navegar según si está autenticado
   let navLinks = '';
   if (isAuth) {
-    navLinks = `
-      <a href="#home">Inicio</a>
-      <a href="#dashboard">Dashboard</a>
-      <a href="#events">Eventos</a>
-      <a href="#my-events">Mis Eventos</a>
-      <a href="#calendar">Calendario</a>
-    `;
+    if (isSecretaria) {
+      // Secretarias solo ven Inicio y Dashboard (perfil y notificaciones vía header)
+      navLinks = `
+        <a href="#home">Inicio</a>
+        <a href="#dashboard">Dashboard</a>
+      `;
+    } else {
+      navLinks = `
+        <a href="#home">Inicio</a>
+        <a href="#dashboard">Dashboard</a>
+        <a href="#events">Eventos</a>
+        <a href="#my-events">Mis Eventos</a>
+      `;
+    }
   } else {
     navLinks = `
       <a href="#home">Inicio</a>
@@ -119,22 +128,42 @@ document.addEventListener('click', (e) => {
     const st = getState();
     const i = Array.isArray(st.notifications) ? st.notifications.findIndex(n => n.idNotificacion === Number(id)) : -1;
     if (i >= 0) {
+      // Optimist update UI
       st.notifications[i].leida = true;
       setState(st);
       readBtn.style.display = 'none';
-      
-      // Actualizar el badge de notificaciones no leídas
-      const unread = Array.isArray(st.notifications) ? st.notifications.filter(n => !n.leida).length : 0;
-      const notifCount = document.getElementById('notif-count');
-      if (notifCount) {
-        if (unread > 0) {
-          notifCount.textContent = unread;
-          notifCount.style.display = 'inline-block';
-        } else {
-          notifCount.textContent = '';
-          notifCount.style.display = 'none';
+      // Enviar petición al backend para persistir
+      (async () => {
+        try {
+          const token = getCurrentUser()?.token || sessionStorage.getItem('uc_auth_token');
+          const res = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH', headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
+          if (!res.ok) {
+            // Revertir si falla
+            st.notifications[i].leida = false;
+            setState(st);
+            readBtn.style.display = 'inline-block';
+            toast('No se pudo marcar la notificación como leída', 'error');
+          } else {
+            // actualizar badge
+            const unread = Array.isArray(st.notifications) ? st.notifications.filter(n => !n.leida).length : 0;
+            const notifCount = document.getElementById('notif-count');
+            if (notifCount) {
+              if (unread > 0) {
+                notifCount.textContent = unread;
+                notifCount.style.display = 'inline-block';
+              } else {
+                notifCount.textContent = '';
+                notifCount.style.display = 'none';
+              }
+            }
+          }
+        } catch (err) {
+          st.notifications[i].leida = false;
+          setState(st);
+          readBtn.style.display = 'inline-block';
+          toast('Error marcando notificación como leída', 'error');
         }
-      }
+      })();
     }
   }
 });

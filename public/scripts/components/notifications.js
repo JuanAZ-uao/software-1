@@ -9,9 +9,12 @@
 
 import { getState, setState } from '../utils/state.js';
 import { getCurrentUser } from '../auth.js';
+import { toast } from '../utils/helpers.js';
+
 
 let unreadCount = 0;
 let notificationRefreshInterval = null;
+let notificationFilter = 'all'; // 'all' | 'unread'
 
 /**
  * Inicia el auto-refresh de notificaciones cada 10 segundos
@@ -47,7 +50,7 @@ export function stopNotificationRefresh() {
 function getAuthToken() {
   try {
     const user = getCurrentUser();
-    return user?.token || localStorage.getItem('uc_auth_token');
+    return user?.token || sessionStorage.getItem('uc_auth_token');
   } catch {
     return null;
   }
@@ -70,36 +73,33 @@ async function fetchWithAuth(url, options = {}) {
 /**
  * Obtiene las notificaciones desde la API
  */
-export async function loadNotifications() {
+export async function loadNotifications(opts = {}) {
   try {
     console.log('📲 Cargando notificaciones...');
-    const res = await fetchWithAuth('/api/notifications');
+    const url = opts.unread ? '/api/notifications?unread=true' : '/api/notifications';
+    const res = await fetchWithAuth(url);
     
     if (!res.ok) {
-      console.error('❌ Error loading notifications:', res.status);
+      toast('Error cargando notificaciones', 'error');
       return [];
     }
     
     const notificaciones = await res.json();
     console.log(`✅ ${notificaciones.length} notificaciones cargadas`);
-    
     if (notificaciones.length > 0) {
       notificaciones.forEach(n => {
         console.log(`  • ${n.titulo} (${n.tipo}) - ${n.descripcion?.substring(0, 50)}...`);
       });
     }
-    
     const st = getState();
     st.notifications = notificaciones;
     setState(st);
-    
     // Actualizar conteo de no leídas
     unreadCount = notificaciones.filter(n => !n.leida).length;
     updateNotificationBadge();
-    
     return notificaciones;
   } catch (err) {
-    console.error('❌ Error fetching notifications:', err);
+    toast('Error de conexión al cargar notificaciones', 'error');
     return [];
   }
 }
@@ -118,7 +118,7 @@ export async function getUnreadCount() {
     updateNotificationBadge();
     return unreadCount;
   } catch (err) {
-    console.error('Error getting unread count:', err);
+    toast('Error obteniendo conteo de notificaciones', 'error');
     return 0;
   }
 }
@@ -144,21 +144,27 @@ function updateNotificationBadge() {
  */
 export function renderNotifications(){
   const { notifications } = getState();
-  
-  if (!notifications || notifications.length === 0) {
+  let filtered = notifications || [];
+  if (notificationFilter === 'unread') {
+    filtered = filtered.filter(n => !n.leida);
+  }
+  if (!filtered || filtered.length === 0) {
     return `
       <div class="card">
         <div class="card-head">
           <strong>Notificaciones</strong>
+          <div style="display: flex; gap: 8px; margin-left: auto;">
+            <button id="showAllNotifications" class="btn small ${notificationFilter==='all' ? 'primary' : 'secondary'}">Todas</button>
+            <button id="showUnreadNotifications" class="btn small ${notificationFilter==='unread' ? 'primary' : 'secondary'}">No leídas</button>
+          </div>
         </div>
         <div class="card-body" style="text-align:center; padding:40px 20px;">
-          <div class="muted">No tienes notificaciones</div>
+          <div class="muted">No tienes notificaciones${notificationFilter==='unread' ? ' no leídas' : ''}</div>
         </div>
       </div>
     `;
   }
-  
-  const items = notifications.map(n => {
+  const items = filtered.map(n => {
     const fecha = new Date(n.fecha_creacion).toLocaleString('es-CO', {
       year: 'numeric',
       month: 'short',
@@ -216,8 +222,10 @@ export function renderNotifications(){
     <div class="card">
       <div class="card-head">
         <strong>Notificaciones</strong>
-        <div style="display: flex; gap: 12px; margin-left: auto; align-items: center;">
-          <small style="color:var(--muted-foreground);">
+        <div style="display: flex; gap: 8px; margin-left: auto; align-items: center;">
+          <button id="showAllNotifications" class="btn small ${notificationFilter==='all' ? 'primary' : 'secondary'}">Todas</button>
+          <button id="showUnreadNotifications" class="btn small ${notificationFilter==='unread' ? 'primary' : 'secondary'}">No leídas</button>
+          <small style="color:var(--muted-foreground); margin-left: 12px;">
             ${notifications.filter(n => !n.leida).length} sin leer
           </small>
           <button id="refreshNotifications" class="btn small secondary" style="margin-left: 8px;">🔄 Recargar</button>
@@ -236,6 +244,26 @@ export function renderNotifications(){
  * Listener global para marcar notificaciones como leídas o eliminar
  */
 document.addEventListener('click', async (e) => {
+  // Filtro: mostrar todas
+  const allBtn = e.target.closest('#showAllNotifications');
+  if (allBtn) {
+    notificationFilter = 'all';
+    // pedir al backend todas las notificaciones
+    await loadNotifications({ unread: false });
+    const notifContainer = document.querySelector('#notificationsContainer');
+    if (notifContainer) notifContainer.innerHTML = renderNotifications();
+    return;
+  }
+  // Filtro: mostrar solo no leídas
+  const unreadBtn = e.target.closest('#showUnreadNotifications');
+  if (unreadBtn) {
+    notificationFilter = 'unread';
+    // solicitar únicamente no leídas al backend para asegurar consistencia
+    await loadNotifications({ unread: true });
+    const notifContainer = document.querySelector('#notificationsContainer');
+    if (notifContainer) notifContainer.innerHTML = renderNotifications();
+    return;
+  }
   // Botón de recarga
   const refreshBtn = e.target.closest('#refreshNotifications');
   if (refreshBtn) {
@@ -255,7 +283,6 @@ document.addEventListener('click', async (e) => {
       const res = await fetchWithAuth(`/api/notifications/${id}/read`, {
         method: 'PATCH'
       });
-      
       if (res.ok) {
         const st = getState();
         const idx = st.notifications.findIndex(n => n.idNotificacion === Number(id));
@@ -266,9 +293,11 @@ document.addEventListener('click', async (e) => {
           markBtn.disabled = true;
         }
         await getUnreadCount();
+      } else {
+        toast('No se pudo marcar como leída', 'error');
       }
     } catch (err) {
-      console.error('Error marking notification as read:', err);
+      toast('Error al marcar como leída', 'error');
     }
     return;
   }
@@ -281,16 +310,17 @@ document.addEventListener('click', async (e) => {
       const res = await fetchWithAuth(`/api/notifications/${id}`, {
         method: 'DELETE'
       });
-      
       if (res.ok) {
         const st = getState();
         st.notifications = st.notifications.filter(n => n.idNotificacion !== Number(id));
         setState(st);
         deleteBtn.closest('.notification-item').remove();
         await getUnreadCount();
+      } else {
+        toast('No se pudo eliminar la notificación', 'error');
       }
     } catch (err) {
-      console.error('Error deleting notification:', err);
+      toast('Error eliminando notificación', 'error');
     }
   }
 });

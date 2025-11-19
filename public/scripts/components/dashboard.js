@@ -47,7 +47,7 @@ function normalizeEventForView(e) {
 export function renderDashboard(){
   const { events = [], organizations = [], users = [] } = getState() || {};
   // ID del usuario autenticado
-  const meId = JSON.parse(localStorage.getItem('uc_auth')||'{}')?.id;
+  const meId = JSON.parse(sessionStorage.getItem('uc_auth')||'{}')?.id;
 
   const normalized = Array.isArray(events) ? events.map(normalizeEventForView) : [];
 
@@ -79,7 +79,6 @@ export function renderDashboard(){
   const quicks = `
     <div class="flex gap-8 mt-16">
       <a href="#events" class="btn small">➕ Nuevo evento</a>
-      <a href="#calendar" class="btn small">📅 Ver calendario</a>
     </div>`;
 
   const recentList = recent.length ? recent.map(e => `
@@ -100,16 +99,12 @@ export function renderDashboard(){
     </section>
 
     <section class="grid mt-24">
-      <div class="card col-8 col-12">
+      <div class="card col-12">
         <div class="card-head"><strong>Eventos recientes</strong></div>
         <div class="card-body">
           <div class="list">${recentList}</div>
           ${quicks}
         </div>
-      </div>
-      <div class="card col-4 col-12">
-        <div class="card-head"><strong>Próximos (mini calendario)</strong></div>
-        <div class="card-body"><div id="mini-cal"></div></div>
       </div>
     </section>
   `;

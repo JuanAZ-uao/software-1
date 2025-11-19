@@ -68,7 +68,7 @@ export async function isDocumentoRegistrado(documentoId) {
  * @param {object} userData
  * @returns {object} Usuario creado
  */
-export const createUser = async ({ nombre, apellidos, email, documento, telefono, password, tipo }) => {
+export const createUser = async ({ nombre, apellidos, email, documento, telefono, password, tipo, facultad }) => {
   console.log('🔵 Repository - Creando usuario:', { nombre, apellidos, documento, email, telefono, tipo });
   
   const connection = await pool.getConnection();
@@ -123,16 +123,31 @@ export const createUser = async ({ nombre, apellidos, email, documento, telefono
       console.log('✅ Docente insertado en unidad ID:', unidades[0].idUnidadAcademica);
       
     } else if (tipo === 'secretaria') {
-      // Usar la primera facultad disponible
-      const [facultades] = await connection.execute('SELECT idFacultad FROM facultad LIMIT 1');
-      if (facultades.length === 0) {
-        throw new Error('No hay facultades disponibles para asignar a la secretaría');
+      // Para secretaria, se requiere que el payload incluya la facultad
+      if (!facultad) {
+        throw new Error('Debe seleccionar una facultad para la secretaria académica');
+      }
+      // Coerce facultad to number and log for debugging
+      const facultadId = Number(facultad);
+      console.log('🔍 createUser - facultad received:', facultad, 'parsed:', facultadId);
+      if (!Number.isInteger(facultadId) || facultadId <= 0) {
+        throw new Error('Facultad inválida');
+      }
+      // Verificar que la facultad exista
+      const [facRows] = await connection.execute('SELECT idFacultad FROM facultad WHERE idFacultad = ?', [facultadId]);
+      if (facRows.length === 0) {
+        throw new Error('Facultad inválida');
+      }
+      // Verificar que no exista ya una secretaria para esa facultad
+      const [existing] = await connection.execute('SELECT 1 FROM secretariaAcademica WHERE idFacultad = ? LIMIT 1', [facultadId]);
+      if (existing.length > 0) {
+        throw new Error('Ya existe una secretaria académica para la facultad seleccionada');
       }
       await connection.execute(
         'INSERT INTO secretariaAcademica (idUsuario, idFacultad) VALUES (?, ?)',
-        [userId, facultades[0].idFacultad]
+        [userId, facultadId]
       );
-      console.log('✅ Secretaría insertada en facultad ID:', facultades[0].idFacultad);
+      console.log('✅ Secretaría insertada en facultad ID:', facultadId);
     }
     
     await connection.commit();

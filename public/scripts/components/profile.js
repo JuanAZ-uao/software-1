@@ -65,7 +65,7 @@ export function renderProfile(){
  */
 async function updateProfile(profileData) {
   try {
-    const token = (getCurrentUser && getCurrentUser().token) || localStorage.getItem('uc_auth_token');
+    const token = (getCurrentUser && getCurrentUser().token) || sessionStorage.getItem('uc_auth_token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -80,7 +80,7 @@ async function updateProfile(profileData) {
     if (result.success) {
       // Actualizar localStorage con los nuevos datos
       // Update stored auth user (keep token if present)
-      const currentAuth = JSON.parse(localStorage.getItem('uc_auth') || 'null') || {};
+      const currentAuth = JSON.parse(sessionStorage.getItem('uc_auth') || 'null') || {};
       const updatedAuth = {
         ...currentAuth,
         id: result.user.id,
@@ -92,7 +92,7 @@ async function updateProfile(profileData) {
       };
       // Preserve existing token
       if (currentAuth.token) updatedAuth.token = currentAuth.token;
-      localStorage.setItem('uc_auth', JSON.stringify(updatedAuth));
+      sessionStorage.setItem('uc_auth', JSON.stringify(updatedAuth));
       
       // Actualizar la vista inmediatamente sin recargar toda la página
       updateProfileView(updatedAuth);

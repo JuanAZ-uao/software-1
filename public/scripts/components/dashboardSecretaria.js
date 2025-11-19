@@ -20,13 +20,15 @@ export function renderDashboardSecretaria() {
   const user = getCurrentUser();
   const eventos = Array.isArray(st.events) ? st.events : [];
 
-  // Pendientes en obra: usamos 'enRevision' como estado de revisión
-  const eventosPendientes = eventos.filter(e => e.estado === 'enRevision');
+  // Excluir eventos rechazados en el dashboard de secretaria
+  const eventosVisible = eventos.filter(e => String(e.estado || '').toLowerCase() !== 'rechazado');
 
-  const totalEventos = eventos.length;
+  // Pendientes en obra: usamos 'enRevision' como estado de revisión
+  const eventosPendientes = eventosVisible.filter(e => e.estado === 'enRevision');
+
+  const totalEventos = eventosVisible.length;
   const pendientes = eventosPendientes.length;
-  const aprobados = eventos.filter(e => e.estado === 'aprobado').length;
-  const rechazados = eventos.filter(e => e.estado === 'rechazado').length;
+  const aprobados = eventosVisible.filter(e => e.estado === 'aprobado').length;
 
   const statCard = (label, value, colorClass = '') => `
     <div class="card stat ${colorClass}">
@@ -46,9 +48,22 @@ export function renderDashboardSecretaria() {
     const organizador = (evento.organizador && (evento.organizador.nombre || evento.organizador.email))
       ? `${evento.organizador.nombre || ''} ${evento.organizador.apellidos || ''}`.trim()
       : (evento.organizadorNombre ? `${evento.organizadorNombre}${evento.organizadorApellidos ? ' ' + evento.organizadorApellidos : ''}`.trim() : 'N/A');
-    const instalaciones = Array.isArray(evento.instalaciones)
-      ? evento.instalaciones.map(inst => (typeof inst === 'object' ? (inst.nombre || inst.label || String(inst.id || '')) : String(inst))).join(', ')
-      : (evento.instalacionesNombres || 'N/A');
+    const instalaciones = (Array.isArray(evento.instalaciones)
+      ? (() => {
+          const seen = new Set();
+          const items = [];
+          for (const inst of evento.instalaciones) {
+            const id = String((inst && (inst.idInstalacion || inst.id)) || inst || '');
+            const name = (typeof inst === 'object' ? (inst.nombre || inst.label || '') : String(inst || '')) || '';
+            const key = id || name;
+            if (!key) continue;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            items.push(name || id);
+          }
+          return items.join(', ');
+        })()
+      : (evento.instalacionesNombres || 'N/A'));
 
     return `
       <tr data-evento-id="${escapeHtml(id)}" data-estado="${escapeHtml(evento.estado || '')}">
@@ -87,10 +102,9 @@ export function renderDashboardSecretaria() {
     <div class="secretaria-dashboard">
       <!-- Estadísticas -->
       <section class="grid mb-24">
-        <div class="col-3 col-12">${statCard('Total Eventos', totalEventos, 'info')}</div>
-        <div class="col-3 col-12">${statCard('Pendientes', pendientes, 'warning')}</div>
-        <div class="col-3 col-12">${statCard('Aprobados', aprobados, 'success')}</div>
-        <div class="col-3 col-12">${statCard('Rechazados', rechazados, 'danger')}</div>
+        <div class="col-4 col-12">${statCard('Total Eventos', totalEventos, 'info')}</div>
+        <div class="col-4 col-12">${statCard('Pendientes', pendientes, 'warning')}</div>
+        <div class="col-4 col-12">${statCard('Aprobados', aprobados, 'success')}</div>
       </section>
 
       <!-- Filtros y búsqueda -->
@@ -119,7 +133,6 @@ export function renderDashboardSecretaria() {
               <select id="filterEstado" class="select">
                 <option value="enRevision">Pendientes</option>
                 <option value="aprobado">Aprobados</option>
-                <option value="rechazado">Rechazados</option>
                 <option value="">Todos los estados</option>
               </select>
             </div>
@@ -377,9 +390,22 @@ async function loadEventosForSecretaria() {
             const organizador = (evento.organizador && (evento.organizador.nombre || evento.organizador.email))
               ? `${evento.organizador.nombre || ''} ${evento.organizador.apellidos || ''}`.trim()
               : (evento.organizadorNombre ? `${evento.organizadorNombre}${evento.organizadorApellidos ? ' ' + evento.organizadorApellidos : ''}`.trim() : 'N/A');
-            const instalaciones = Array.isArray(evento.instalaciones)
-              ? evento.instalaciones.map(inst => (typeof inst === 'object' ? (inst.nombre || inst.label || String(inst.id || '')) : String(inst))).join(', ')
-              : (evento.instalacionesNombres || 'N/A');
+            const instalaciones = (Array.isArray(evento.instalaciones)
+              ? (() => {
+                  const seen = new Set();
+                  const items = [];
+                  for (const inst of evento.instalaciones) {
+                    const id = String((inst && (inst.idInstalacion || inst.id)) || inst || '');
+                    const name = (typeof inst === 'object' ? (inst.nombre || inst.label || '') : String(inst || '')) || '';
+                    const key = id || name;
+                    if (!key) continue;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    items.push(name || id);
+                  }
+                  return items.join(', ');
+                })()
+              : (evento.instalacionesNombres || 'N/A'));
 
             return `
               <tr data-evento-id="${escapeHtml(id)}" data-estado="${escapeHtml(evento.estado || '')}">
@@ -464,10 +490,18 @@ async function openReviewModal(eventId) {
     // Instalaciones
     let instalacionesHTML = 'No especificadas';
     if (evento.instalaciones && Array.isArray(evento.instalaciones) && evento.instalaciones.length > 0) {
-      instalacionesHTML = evento.instalaciones.map(inst => {
-        const name = (typeof inst === 'object') ? (inst.nombre || inst.label || inst.nombreInstalacion || inst.name) : inst;
-        return `<span class="badge secondary">${escapeHtml(name || String(inst))}</span>`;
-      }).join(' ');
+      const seen = new Set();
+      const badges = [];
+      for (const inst of evento.instalaciones) {
+        const id = String((inst && (inst.idInstalacion || inst.id)) || inst || '');
+        const name = (typeof inst === 'object') ? (inst.nombre || inst.label || inst.nombreInstalacion || inst.name) : String(inst || '');
+        const key = id || name;
+        if (!key) continue;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        badges.push(`<span class="badge secondary">${escapeHtml(name || id)}</span>`);
+      }
+      instalacionesHTML = badges.join(' ');
     } else if (evento.instalacionesNombres) {
       instalacionesHTML = evento.instalacionesNombres.split(',').map(nombre =>
         `<span class="badge secondary">${escapeHtml(nombre.trim())}</span>`

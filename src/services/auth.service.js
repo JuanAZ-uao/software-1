@@ -74,15 +74,17 @@ export const registerUser = async (userData) => {
   // Aquí continúa la lógica de inserción del usuario
   // ...
 	// Crear usuario sin hash por ahora
-	const newUser = await createUser({
-		nombre,
-		apellidos,
-		documento,
-		email,
-		telefono,
-		password, // Sin hash
-		tipo
-	});
+		const { facultad } = userData;
+		const newUser = await createUser({
+			nombre,
+			apellidos,
+			documento,
+			email,
+			telefono,
+			password, // Sin hash
+			tipo,
+			facultad
+		});
 
 	// Enviar correos en background (fire-and-forget) para no bloquear el registro
 	// sendWelcomeEmail y sendNewUserNotificationToAdmin devuelven true/false según resultado
