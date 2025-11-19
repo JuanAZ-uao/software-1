@@ -111,11 +111,42 @@ document.addEventListener('click', (e) => {
               <div class="muted" style="font-size:0.85rem;margin-top:4px;">${n.tipo} • ${new Date(n.fecha_creacion).toLocaleString('es-CO')}</div>
               <div style="font-size:0.9rem;margin-top:6px;color:var(--muted-foreground);">${n.descripcion || 'Sin detalles'}</div>
             </div>
-            ${!n.leida ? `<button class="btn small" data-read="${n.idNotificacion}">Marcar leída</button>` : ''}
+            <div style="display:flex; gap:8px; flex-shrink:0;">
+              ${!n.leida ? `<button class="btn small" data-read="${n.idNotificacion}">Marcar leída</button>` : ''}
+              <button class="btn small danger delete-notif-btn" data-id="${n.idNotificacion}">🗑</button>
+            </div>
           </div>
         </div>`).join('')
       : '<div class="notif-item muted">Sin notificaciones</div>';
     if (notifDd) { notifDd.innerHTML = items; notifDd.classList.toggle('open'); }
+    return;
+  }
+  // Eliminar notificación desde el header
+  const deleteBtn = e.target.closest('.delete-notif-btn');
+  if (deleteBtn) {
+    const id = deleteBtn.getAttribute('data-id');
+    const confirmDelete = window.confirm('¿Seguro que deseas borrar esta notificación? Esta acción no se puede deshacer.');
+    if (!confirmDelete) return;
+    (async () => {
+      try {
+        const token = getCurrentUser()?.token || sessionStorage.getItem('uc_auth_token');
+        const res = await fetch(`/api/notifications/${id}`, {
+          method: 'DELETE',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const st = getState();
+          st.notifications = st.notifications.filter(n => n.idNotificacion !== Number(id));
+          setState(st);
+          deleteBtn.closest('.notif-item').remove();
+          toast('Notificación eliminada', 'success');
+        } else {
+          toast('No se pudo eliminar la notificación', 'error');
+        }
+      } catch (err) {
+        toast('Error eliminando notificación', 'error');
+      }
+    })();
     return;
   }
 

@@ -24,9 +24,20 @@ export function startNotificationRefresh() {
   
   notificationRefreshInterval = setInterval(async () => {
     try {
+      const token = getAuthToken();
+      if (!token) {
+        stopNotificationRefresh();
+        toast('Sesión expirada. Recarga la página para volver a iniciar sesión.', 'error');
+        return;
+      }
       await loadNotifications();
     } catch (err) {
-      console.error('Auto-refresh error:', err);
+      if (err?.status === 401 || (err?.message && err.message.includes('401'))) {
+        stopNotificationRefresh();
+        toast('Sesión expirada. Recarga la página para volver a iniciar sesión.', 'error');
+      } else {
+        console.error('Auto-refresh error:', err);
+      }
     }
   }, 10000); // Cada 10 segundos
   
@@ -302,10 +313,12 @@ document.addEventListener('click', async (e) => {
     return;
   }
   
-  // Eliminar notificación
+  // Eliminar notificación con confirmación
   const deleteBtn = e.target.closest('.delete-notif-btn');
   if (deleteBtn) {
     const id = deleteBtn.getAttribute('data-id');
+    const confirmDelete = window.confirm('¿Seguro que deseas borrar esta notificación? Esta acción no se puede deshacer.');
+    if (!confirmDelete) return;
     try {
       const res = await fetchWithAuth(`/api/notifications/${id}`, {
         method: 'DELETE'

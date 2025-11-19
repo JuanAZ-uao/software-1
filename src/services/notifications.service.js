@@ -10,44 +10,23 @@ import * as eventRepo from '../repositories/events.repository.js';
 export async function notifySecretariasOnReview(idEvento, idFacultad) {
   try {
     console.log(`📨 Notificando secretarias: idEvento=${idEvento}, idFacultad=${idFacultad}`);
-    
     // Obtener evento para detalles
     const evento = await eventRepo.findById(idEvento);
     if (!evento) throw new Error('Evento no encontrado');
 
-    // Obtener secretarias de la facultad (si no hay facultad, notificar a todas)
-    let secretariaIds = [];
-    if (idFacultad) {
-      secretariaIds = await notifRepo.getSecretariasByFacultad(idFacultad);
-      if (!Array.isArray(secretariaIds)) secretariaIds = [];
-      if (secretariaIds.length === 0) {
-        console.warn(`⚠️ No secretarias found for facultad ${idFacultad}, will notify none`);
-      }
-    } else {
-      // Fallback: obtener todas las secretarias registradas
-      console.warn('⚠️ idFacultad no disponible para evento, notificando a todas las secretarias registradas');
-      secretariaIds = await notifRepo.getAllSecretarias();
-      if (!Array.isArray(secretariaIds)) secretariaIds = [];
-    }
+    // FORZAR: obtener todas las secretarias académicas registradas
+    const secretariaIds = await notifRepo.getAllSecretarias();
+    console.log(`✅ Notificando a todas las secretarias: [${secretariaIds.join(', ')}]`);
 
-    console.log(`✅ Encontradas ${secretariaIds.length} secretarias: [${secretariaIds.join(', ')}]`);
-
-    // Crear notificación para cada secretaria, con manejo de errores por ID
+    // Crear notificación para cada secretaria
     const notificaciones = [];
-    const failures = [];
     const titulo = `Nuevo evento en revisión: ${evento.nombre}`;
     const descripcion = `El evento "${evento.nombre}" programado para ${evento.fecha} a las ${evento.hora} ha sido enviado a revisión. Revisa los detalles y evalúa el evento.`;
 
     for (const idSecretariaRaw of secretariaIds) {
       const idSecretaria = Number(idSecretariaRaw);
-      if (!Number.isFinite(idSecretaria)) {
-        console.warn(`↘ Skipping invalid secretaria id: ${idSecretariaRaw}`);
-        failures.push({ id: idSecretariaRaw, reason: 'invalid id' });
-        continue;
-      }
-
+      if (!Number.isFinite(idSecretaria)) continue;
       try {
-        console.log(`  → Creando notificación para secretaria ${idSecretaria}`);
         const notif = await notifRepo.createNotification(
           idSecretaria,
           idEvento,
@@ -55,17 +34,12 @@ export async function notifySecretariasOnReview(idEvento, idFacultad) {
           titulo,
           descripcion
         );
-        console.log(`    ✓ Notificación creada para ${idSecretaria}: ${notif?.idNotificacion}`);
         notificaciones.push(notif);
       } catch (err) {
-        console.error(`    ✗ Error creando notificación para ${idSecretaria}:`, err?.message || err);
-        failures.push({ id: idSecretaria, reason: err?.message || 'create failed' });
+        console.error(`Error creando notificación para secretaria ${idSecretaria}:`, err);
       }
     }
-
-    console.log(`✅ ${notificaciones.length} notificaciones creadas; ${failures.length} fallos`);
-    if (failures.length) console.warn('Failures creating notifications:', failures);
-    return { created: notificaciones, failures };
+    return notificaciones;
   } catch (err) {
     console.error('❌ Error notifying secretarias on review:', err);
     throw err;
