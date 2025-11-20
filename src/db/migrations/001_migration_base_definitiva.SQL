@@ -286,7 +286,7 @@ BEGIN
     END IF;
 END$$
 
--- 3) Evitar solapamiento de eventos en la misma instalación
+-- 3) Evitar solapamiento de eventos APROBADOS en la misma instalación (INSERT)
 CREATE TRIGGER trg_evitar_solapamiento_ei_before_insert
 BEFORE INSERT ON evento_instalacion
 FOR EACH ROW
@@ -302,13 +302,13 @@ BEGIN
     FROM evento e
     WHERE e.idEvento = NEW.idEvento;
     
-    -- Verificar solapamiento
+    -- Verificar solapamiento SOLO con eventos APROBADOS
     SELECT COUNT(*) INTO instalacion_ocupada
     FROM evento_instalacion ei
     JOIN evento e ON ei.idEvento = e.idEvento
     WHERE ei.idInstalacion = NEW.idInstalacion
       AND e.fecha = evento_fecha
-      AND e.estado != 'rechazado'
+      AND e.estado = 'aprobado'  -- SOLO eventos aprobados
       AND e.idEvento != NEW.idEvento
       AND (
         (e.hora < evento_hora_fin AND e.horaFin > evento_hora)
@@ -316,11 +316,11 @@ BEGIN
     
     IF instalacion_ocupada > 0 THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'La instalación ya está ocupada en ese horario. Por favor, seleccione otra fecha, hora o instalación.';
+            SET MESSAGE_TEXT = 'La instalación ya está ocupada en ese horario por un evento aprobado. Por favor, seleccione otra fecha, hora o instalación.';
     END IF;
 END$$
 
--- 4) Evitar solapamiento al actualizar evento_instalacion
+-- 4) Evitar solapamiento de eventos APROBADOS al actualizar evento_instalacion
 CREATE TRIGGER trg_evitar_solapamiento_ei_before_update
 BEFORE UPDATE ON evento_instalacion
 FOR EACH ROW
@@ -336,13 +336,13 @@ BEGIN
     FROM evento e
     WHERE e.idEvento = NEW.idEvento;
     
-    -- Verificar solapamiento (excluyendo el evento actual)
+    -- Verificar solapamiento SOLO con eventos APROBADOS
     SELECT COUNT(*) INTO instalacion_ocupada
     FROM evento_instalacion ei
     JOIN evento e ON ei.idEvento = e.idEvento
     WHERE ei.idInstalacion = NEW.idInstalacion
       AND e.fecha = evento_fecha
-      AND e.estado != 'rechazado'
+      AND e.estado = 'aprobado'  -- SOLO eventos aprobados
       AND e.idEvento != NEW.idEvento
       AND (
         (e.hora < evento_hora_fin AND e.horaFin > evento_hora)
@@ -350,7 +350,74 @@ BEGIN
     
     IF instalacion_ocupada > 0 THEN
         SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'La instalación ya está ocupada en ese horario.';
+            SET MESSAGE_TEXT = 'La instalación ya está ocupada en ese horario por un evento aprobado.';
+    END IF;
+END$$
+
+-- 5) Evitar que se apruebe un evento que se solapa con otro ya aprobado
+CREATE TRIGGER trg_evitar_aprobar_evento_solapado
+BEFORE UPDATE ON evento
+FOR EACH ROW
+BEGIN
+    DECLARE instalacion_ocupada INT DEFAULT 0;
+    
+    -- Solo verificar cuando el estado cambia a 'aprobado'
+    IF (NEW.estado = 'aprobado' AND OLD.estado != 'aprobado') THEN
+        
+        -- Verificar solapamiento con eventos ya aprobados
+        SELECT COUNT(*) INTO instalacion_ocupada
+        FROM evento_instalacion ei
+        JOIN evento e ON ei.idEvento = e.idEvento
+        WHERE ei.idInstalacion IN (
+            SELECT idInstalacion FROM evento_instalacion WHERE idEvento = NEW.idEvento
+        )
+          AND e.fecha = NEW.fecha
+          AND e.estado = 'aprobado'
+          AND e.idEvento != NEW.idEvento
+          AND (
+            (e.hora < NEW.horaFin AND e.horaFin > NEW.hora)
+          );
+        
+        IF instalacion_ocupada > 0 THEN
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'No se puede aprobar el evento porque se solapa con eventos ya aprobados en una o más instalaciones.';
+        END IF;
+    END IF;
+END$$
+
+-- 6) Evitar eliminar organizaciones que participan en eventos
+CREATE TRIGGER trg_evitar_eliminar_organizacion_con_eventos
+BEFORE DELETE ON organizacion
+FOR EACH ROW
+BEGIN
+    DECLARE eventos_count INT DEFAULT 0;
+    
+    -- Verificar si la organización está participando en algún evento
+    SELECT COUNT(*) INTO eventos_count
+    FROM organizacion_evento
+    WHERE idOrganizacion = OLD.idOrganizacion;
+    
+    IF eventos_count > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede eliminar la organización porque está participando en uno o más eventos.';
+    END IF;
+END$$
+
+-- 7) Evitar eliminar usuarios que son creadores de organizaciones
+CREATE TRIGGER trg_evitar_eliminar_usuario_con_organizaciones
+BEFORE DELETE ON usuario
+FOR EACH ROW
+BEGIN
+    DECLARE organizaciones_count INT DEFAULT 0;
+    
+    -- Verificar si el usuario es creador de alguna organización
+    SELECT COUNT(*) INTO organizaciones_count
+    FROM organizacion
+    WHERE created_by = OLD.idUsuario;
+    
+    IF organizaciones_count > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede eliminar el usuario porque es creador de una o más organizaciones.';
     END IF;
 END$$
 
@@ -383,7 +450,20 @@ INSERT INTO instalacion VALUES
 (2, "Auditorio Yquinde", "Ala Norte", 300, "auditorio"), 
 (3, "4302", "Aulas 4 Piso 3", 30, "salon");
 
-INSERT INTO documento VALUES (1), (2), (3);
+INSERT INTO documento VALUES (1), (2), (3), (4), (5);
+
+-- Insertar usuarios de prueba
+INSERT INTO usuario (nombre, apellidos, email, telefono, documento) VALUES
+('Juan', 'Pérez', 'juan@example.com', '123456789', 1),
+('María', 'Gómez', 'maria@example.com', '987654321', 2),
+('Carlos', 'López', 'carlos@example.com', '555555555', 3),
+('Ana', 'Martínez', 'ana@example.com', '444444444', 4),
+('Pedro', 'Rodríguez', 'pedro@example.com', '333333333', 5);
+
+-- Insertar estudiantes y docentes
+INSERT INTO estudiante (idUsuario, idPrograma) VALUES (1, 1), (2, 2);
+INSERT INTO docente (idUsuario, idUnidadAcademica) VALUES (3, 1), (4, 2);
+INSERT INTO secretariaAcademica (idUsuario, idFacultad) VALUES (5, 1);
 
 -- Verificar que todo se creó correctamente
 SHOW TABLES;
@@ -391,4 +471,4 @@ SHOW TABLES;
 -- Verificar triggers
 SHOW TRIGGERS;
 
-SELECT 'Base de datos creada exitosamente!' as Status;
+SELECT 'Base de datos GestionEventos creada exitosamente!' as Status;
