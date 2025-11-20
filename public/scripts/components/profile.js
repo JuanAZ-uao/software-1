@@ -33,7 +33,6 @@ export function renderProfile(){
           <form id="profileForm" class="flex-col gap-12">
             <div><label class="label">Nombre</label><input class="input" name="nombre" value="${u.nombre || ''}" required></div>
             <div><label class="label">Apellidos</label><input class="input" name="apellidos" value="${u.apellidos || ''}" required></div>
-            <div><label class="label">Correo electrónico</label><input class="input" name="email" type="email" value="${u.email || ''}" required></div>
             <div><label class="label">Teléfono</label><input class="input" name="telefono" type="tel" value="${u.telefono || ''}" pattern="[0-9]{10}" title="Debe contener exactamente 10 dígitos" required></div>
             <button type="submit" class="btn primary" id="saveProfileBtn">Guardar cambios</button>
           </form>

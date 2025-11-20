@@ -597,6 +597,16 @@ function bindEventListenersInner() {
       if (!payload.nombre) { toast('Nombre de la organización es requerido', 'error'); return; }
       if (!payload.representanteLegal) { toast('Representante legal es requerido', 'error'); return; }
       if (!payload.sectorEconomico) { toast('Seleccione sector económico para la organización', 'error'); return; }
+      if(!payload.nit) { toast('NIT es requerido', 'error'); return; } 
+      if(payload.nit && isNaN(Number(payload.nit))) { toast('NIT debe ser numérico', 'error'); return; }
+      if(!payload.ubicacion) {toast('Ubicación es requerida', 'error'); return; }
+      if(!payload.direccion) {toast('Dirección es requerida', 'error'); return; }
+      if(!payload.ciudad) {toast('Ciudad es requerida', 'error'); return; }
+      if(!payload.actividadPrincipal) {toast('Actividad principal es requerida', 'error'); return; }
+      if(!payload.telefono) {toast('Teléfono es requerido', 'error'); return; }
+      if(payload.telefono && isNaN(Number(payload.telefono))) { toast('Teléfono debe ser numérico', 'error'); return; }
+
+
       const editingId = payload.id;
       try {
         const url = editingId ? `/api/organizations/${editingId}` : '/api/organizations';

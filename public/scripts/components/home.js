@@ -326,11 +326,6 @@ function renderLimitedEventModal(ev, imageUrl) {
             <div class="section-title">👥 Participantes</div>
             <div style="margin-top:8px">${participantesHtml || '<div class="muted">No hay participantes listados</div>'}</div>
           </div>
-
-          <div class="detail-section" style="margin-top:12px;">
-            <div class="section-title">ℹ️ Detalles</div>
-            <div style="margin-top:8px">Capacidad del evento: <strong>${ev.capacidad != null ? ev.capacidad : '—'}</strong></div>
-          </div>
         </div>
       </div>
     </div>
